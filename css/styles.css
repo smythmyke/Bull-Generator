@@ -1,0 +1,71 @@
+/* Global styles */
+:root {
+    --primary-red: #FF3B30;
+    --dark-gray: #333333;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+}
+
+/* Logo and header styles */
+.logo-img {
+    width: 40px;
+    height: 40px;
+    object-fit: contain;
+}
+
+/* Button styles */
+.primary-button {
+    background-color: var(--primary-red);
+    transition: background-color 0.2s ease;
+}
+
+.primary-button:hover {
+    background-color: #E5352B;
+}
+
+/* Feature list styles */
+.feature-check {
+    width: 16px;
+    height: 16px;
+    color: #22C55E;
+    margin-right: 8px;
+}
+
+/* Card styles */
+.strategy-card {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.strategy-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+}
+
+/* Pricing section */
+.pricing-card {
+    border: 1px solid #E5E7EB;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.pricing-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+}
+
+/* How it works section */
+.step-card {
+    transition: transform 0.2s ease;
+}
+
+.step-card:hover {
+    transform: translateY(-2px);
+}
+
+/* Responsive adjustments */
+@media (max-width: 640px) {
+    h1 {
+        font-size: 2.5rem;
+    }
+}
