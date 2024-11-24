@@ -18,7 +18,7 @@
                 if (typeof chrome !== 'undefined' && chrome.runtime) {
                     // Extension is installed, try to send message
                     chrome.runtime.sendMessage(
-                        'YOUR_EXTENSION_ID', // Replace with your actual extension ID
+                        'cidnfgnlheffodpoldolfgdlllipclgd', // Replace with your actual extension ID
                         { type: 'OPEN_PAYMENT_FLOW' },
                         function(response) {
                             if (chrome.runtime.lastError) {
@@ -39,7 +39,7 @@
 
         // Function to redirect to Chrome Web Store
         function redirectToStore() {
-            window.location.href = 'https://chrome.google.com/webstore/detail/YOUR_EXTENSION_ID';
+            window.location.href = 'https://chrome.google.com/webstore/detail/cidnfgnlheffodpoldolfgdlllipclgd';
         }
     </script>
 </head>
