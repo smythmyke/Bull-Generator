@@ -7,6 +7,41 @@
     <!-- Changed to CDN version of Tailwind -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="./css/styles.css">
+    <!-- Add Stripe.js -->
+    <script src="https://js.stripe.com/v3/"></script>
+    <!-- Add payment handling -->
+    <script>
+        // Function to handle payment button clicks
+        async function handlePayment() {
+            try {
+                // Check if the extension is installed
+                if (typeof chrome !== 'undefined' && chrome.runtime) {
+                    // Extension is installed, try to send message
+                    chrome.runtime.sendMessage(
+                        'YOUR_EXTENSION_ID', // Replace with your actual extension ID
+                        { type: 'OPEN_PAYMENT_FLOW' },
+                        function(response) {
+                            if (chrome.runtime.lastError) {
+                                // Extension not installed or error occurred
+                                redirectToStore();
+                            }
+                        }
+                    );
+                } else {
+                    // Extension not installed
+                    redirectToStore();
+                }
+            } catch (error) {
+                // Any error means extension is not properly installed
+                redirectToStore();
+            }
+        }
+
+        // Function to redirect to Chrome Web Store
+        function redirectToStore() {
+            window.location.href = 'https://chrome.google.com/webstore/detail/YOUR_EXTENSION_ID';
+        }
+    </script>
 </head>
 <body class="bg-white">
     <header class="border-b">
@@ -16,9 +51,10 @@
                     <img src="./images/small-bull-logo.png" alt="Bull Logo" class="logo-img"/>
                     <span class="text-2xl font-bold text-gray-900">Bull Generator</span>
                 </div>
-                <a href="#" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white primary-button">
+                <!-- Updated to button with onclick -->
+                <button onclick="handlePayment()" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white primary-button">
                     Start Searching
-                </a>
+                </button>
             </div>
         </nav>
     </header>
@@ -34,9 +70,10 @@
                     Generate powerful boolean search strings instantly. Access multiple patent databases with professional-grade search strategies.
                 </p>
                 <div class="mt-8 sm:max-w-lg sm:mx-auto sm:text-center lg:text-left space-y-4">
-                    <a href="#" class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white primary-button">
+                    <!-- Updated to button with onclick -->
+                    <button onclick="handlePayment()" class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white primary-button">
                         Try For Free
-                    </a>
+                    </button>
                     <p class="text-sm text-gray-500">
                         5 free searches daily • No credit card required
                     </p>
@@ -69,6 +106,10 @@
                                 Advanced patent field searching
                             </li>
                         </ul>
+                        <!-- Added Subscribe Now button -->
+                        <button onclick="handlePayment()" class="w-full inline-flex justify-center items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white primary-button">
+                            Subscribe Now
+                        </button>
                     </div>
                 </div>
             </div>
