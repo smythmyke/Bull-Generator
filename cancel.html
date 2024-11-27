@@ -23,7 +23,7 @@
       box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
     }
     h1 {
-      color: #4b5563;
+      color: #dc2626;
       margin-bottom: 1rem;
     }
     p {
@@ -44,39 +44,50 @@
     .close-button:hover {
       background-color: #4b5563;
     }
+    .fallback-text {
+      display: none;
+      margin-top: 1rem;
+      font-size: 0.875rem;
+      color: #6b7280;
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>Payment Cancelled</h1>
-    <p>Your payment was cancelled. You can try again anytime by clicking the "Unlock Boolean Search Generator" button in the extension.</p>
-    <button class="close-button" onclick="closeWindow()">Close Window</button>
+    <p>Your subscription to the Boolean Search Generator was not completed. If you experienced any issues or have questions about our precise search string creation tools, please try again or contact support.</p>
+    <button class="close-button" id="closeButton">Close Window</button>
+    <p class="fallback-text" id="fallbackText">You can now close this window and return to the extension.</p>
   </div>
-
   <script>
-    function closeWindow() {
-      // First try to send message to the extension
+    document.getElementById('closeButton').addEventListener('click', function() {
+      // First try to notify the extension
       if (chrome && chrome.runtime && chrome.runtime.sendMessage) {
-        chrome.runtime.sendMessage({ 
-          type: "PAYMENT_CANCELLED" 
-        }, () => {
-          // Close the window after sending the message
-          window.close();
+        chrome.runtime.sendMessage({ type: "PAYMENT_CANCELLED", action: "close_window" }, function(response) {
+          // If the extension doesn't respond or can't close the window, try window.close()
+          if (!response || !response.success) {
+            tryCloseWindow();
+          }
         });
       } else {
-        // If we can't send the message (not in extension context), just close
+        // If chrome.runtime is not available, try window.close()
+        tryCloseWindow();
+      }
+    });
+
+    function tryCloseWindow() {
+      try {
         window.close();
+      } catch (e) {
+        // If window.close() fails, show the fallback text
+        document.getElementById('fallbackText').style.display = 'block';
       }
     }
 
-    // Auto-send message when page loads
-    document.addEventListener('DOMContentLoaded', function() {
-      if (chrome && chrome.runtime && chrome.runtime.sendMessage) {
-        chrome.runtime.sendMessage({ 
-          type: "PAYMENT_CANCELLED" 
-        });
-      }
-    });
+    // Notify the extension about cancelled payment when the page loads
+    if (chrome && chrome.runtime && chrome.runtime.sendMessage) {
+      chrome.runtime.sendMessage({ type: "PAYMENT_CANCELLED" });
+    }
   </script>
 </body>
 </html>
