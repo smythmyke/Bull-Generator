@@ -50,27 +50,102 @@
       font-size: 0.875rem;
       color: #6b7280;
     }
+    .loading {
+      display: inline-block;
+      width: 1rem;
+      height: 1rem;
+      border: 2px solid #f3f3f3;
+      border-top: 2px solid #059669;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-right: 0.5rem;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>Payment Successful!</h1>
     <p>Thank you for your purchase. Your subscription has been activated and you now have full access to the Boolean Search Generator, including accurate synonyms, limiters, and operators for creating precise search strings.</p>
-    <button class="close-button" id="closeButton">Close Window</button>
+    <button class="close-button" id="closeButton" disabled>
+      <span class="loading"></span>
+      Activating subscription...
+    </button>
     <p class="fallback-text" id="fallbackText">You can now close this window and return to the extension.</p>
   </div>
   <script>
-    document.getElementById('closeButton').addEventListener('click', function() {
-      // First try to notify the extension
+    // Function to get URL parameters
+    function getUrlParam(param) {
+      const urlParams = new URLSearchParams(window.location.search);
+      return urlParams.get(param);
+    }
+
+    // Function to update button state
+    function updateButton(text, disabled = false) {
+      const button = document.getElementById('closeButton');
+      button.disabled = disabled;
+      button.innerHTML = disabled ? 
+        '<span class="loading"></span>Activating subscription...' : 
+        text;
+    }
+
+    // Function to handle subscription activation
+    async function activateSubscription() {
+      const sessionId = getUrlParam('session_id');
+      if (!sessionId) {
+        console.error('No session ID found');
+        updateButton('Close Window', false);
+        return;
+      }
+
+      // First notify the extension about successful payment
       if (chrome && chrome.runtime && chrome.runtime.sendMessage) {
-        chrome.runtime.sendMessage({ type: "PAYMENT_SUCCESS", action: "close_window" }, function(response) {
-          // If the extension doesn't respond or can't close the window, try window.close()
+        try {
+          // Send PAYMENT_SUCCESS message
+          await new Promise((resolve, reject) => {
+            chrome.runtime.sendMessage({ 
+              type: "PAYMENT_SUCCESS",
+              sessionId: sessionId
+            }, response => {
+              if (chrome.runtime.lastError) {
+                reject(chrome.runtime.lastError);
+              } else {
+                resolve(response);
+              }
+            });
+          });
+
+          // Wait a bit to allow Firestore to update
+          await new Promise(resolve => setTimeout(resolve, 2000));
+
+          // Update button state
+          updateButton('Close Window', false);
+        } catch (error) {
+          console.error('Error activating subscription:', error);
+          updateButton('Close Window', false);
+        }
+      } else {
+        console.error('Chrome runtime not available');
+        updateButton('Close Window', false);
+      }
+    }
+
+    // Handle close button click
+    document.getElementById('closeButton').addEventListener('click', function() {
+      // Try to close through extension
+      if (chrome && chrome.runtime && chrome.runtime.sendMessage) {
+        chrome.runtime.sendMessage({ 
+          type: "PAYMENT_SUCCESS", 
+          action: "close_window" 
+        }, function(response) {
           if (!response || !response.success) {
             tryCloseWindow();
           }
         });
       } else {
-        // If chrome.runtime is not available, try window.close()
         tryCloseWindow();
       }
     });
@@ -79,15 +154,12 @@
       try {
         window.close();
       } catch (e) {
-        // If window.close() fails, show the fallback text
         document.getElementById('fallbackText').style.display = 'block';
       }
     }
 
-    // Notify the extension about successful payment when the page loads
-    if (chrome && chrome.runtime && chrome.runtime.sendMessage) {
-      chrome.runtime.sendMessage({ type: "PAYMENT_SUCCESS" });
-    }
+    // Start subscription activation when page loads
+    window.addEventListener('load', activateSubscription);
   </script>
 </body>
 </html>
