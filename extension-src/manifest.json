@@ -1,0 +1,51 @@
+{
+  "manifest_version": 3,
+  "name": "Patent Search Generator",
+  "version": "2.0.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA33r/weMc6jifrE5BUNuC0e0wdTFa+RXPviC8v53lhgkxgclx2s9W+/GoGoqV3s+LJ6RvU+xx4eUjvAbnP0svpSWjixJXFQk8f6dX4yBxFd0aCDYo3RjsK9JeNmHXrqdRDUIVmiwd5qLQFLjEbpbG21HGFlGRtoR9bzX/05lJd8cRzXdxuQX9A+Oqkwfc/sYq2JkijeRTkHToVTfcb1M6q8b0RPaDKN5W+8UKOufE99CyaHladAnsF8OvWCbmBU8d5f6+OV4xJfzgNQqgRMgsMbWtqjDWVIOLkMMxNPesl1aCM3HGVCEi2iLDGEqqo4Ip6cFgecm5rfikW1IQ077krQIDAQAB",
+  "description": "Generate patent search strategies with AI assistance",
+  "action": {
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "side_panel": {
+    "default_path": "index.html"
+  },
+  "background": {
+    "service_worker": "background.bundle.js",
+    "type": "module"
+  },
+  "permissions": ["storage", "identity", "tabs", "sidePanel", "activeTab", "scripting"],
+  "host_permissions": [
+    "https://*.googleapis.com/",
+    "https://*.firebaseapp.com/",
+    "https://*.firebaseio.com/",
+    "https://*.a.run.app/",
+    "https://*.cloudfunctions.net/",
+    "https://us-central1-solicitation-matcher-extension.cloudfunctions.net/",
+    "https://patents.google.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://patents.google.com/*"],
+      "js": ["content.bundle.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; script-src-elem 'self' 'unsafe-inline' https://*.firebaseapp.com https://*.googleapis.com; connect-src 'self' https://*.googleapis.com https://*.firebaseapp.com https://identitytoolkit.googleapis.com https://*.firebaseio.com https://*.cloudfunctions.net https://*.a.run.app https://us-central1-solicitation-matcher-extension.cloudfunctions.net; object-src 'self'"
+  },
+  "externally_connectable": {
+    "matches": ["https://smythmyke.github.io/*"]
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

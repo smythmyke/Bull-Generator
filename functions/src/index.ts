@@ -1,0 +1,89 @@
+import * as functions from "firebase-functions";
+import * as admin from "firebase-admin";
+import cors from "cors";
+import {handleAIRequest} from "./ai";
+
+admin.initializeApp();
+
+const corsHandler = cors({origin: true});
+
+// Rate limiting map: userId -> { count, resetTime }
+const rateLimits = new Map<string, { count: number; resetTime: number }>();
+const RATE_LIMIT = 20; // requests per minute
+const RATE_WINDOW = 60 * 1000; // 1 minute
+
+function checkRateLimit(userId: string): boolean {
+  const now = Date.now();
+  const entry = rateLimits.get(userId);
+
+  if (!entry || now > entry.resetTime) {
+    rateLimits.set(userId, {count: 1, resetTime: now + RATE_WINDOW});
+    return true;
+  }
+
+  if (entry.count >= RATE_LIMIT) {
+    return false;
+  }
+
+  entry.count++;
+  return true;
+}
+
+async function verifyAuth(
+  req: functions.https.Request
+): Promise<admin.auth.DecodedIdToken> {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith("Bearer ")) {
+    throw new functions.https.HttpsError(
+      "unauthenticated",
+      "Missing or invalid Authorization header"
+    );
+  }
+
+  const idToken = authHeader.split("Bearer ")[1];
+  try {
+    return await admin.auth().verifyIdToken(idToken);
+  } catch {
+    throw new functions.https.HttpsError(
+      "unauthenticated",
+      "Invalid or expired token"
+    );
+  }
+}
+
+// AI proxy endpoints
+export const ai = functions.https.onRequest((req, res) => {
+  corsHandler(req, res, async () => {
+    if (req.method === "OPTIONS") {
+      res.status(204).send("");
+      return;
+    }
+
+    if (req.method !== "POST") {
+      res.status(405).json({error: "Method not allowed"});
+      return;
+    }
+
+    try {
+      const decodedToken = await verifyAuth(req);
+
+      if (!checkRateLimit(decodedToken.uid)) {
+        res.status(429).json({error: "Rate limit exceeded. Try again later."});
+        return;
+      }
+
+      // Route based on path
+      const path = req.path;
+      const result = await handleAIRequest(path, req.body);
+      res.status(200).json({data: result});
+    } catch (error) {
+      if (error instanceof functions.https.HttpsError) {
+        res.status(401).json({error: error.message});
+        return;
+      }
+      console.error("AI request error:", error);
+      const message = error instanceof Error ? error.message : "Unknown error";
+      res.status(500).json({error: message});
+    }
+  });
+});

@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Build output
+extension-src/dist/
+functions/lib/
+
+# Environment files (contain secrets)
+.env
+functions/.env
+extension-src/.env
+
+# Claude Code local settings
+.claude/
+
+# Scratch files
+html.txt
+html1.txt
+html2.txt
+
+# OS files
+.DS_Store
+Thumbs.db
