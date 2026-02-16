@@ -2,6 +2,8 @@ import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 import cors from "cors";
 import {handleAIRequest} from "./ai";
+import {handleCreditRequest} from "./credits";
+import {handleWebhookEvent} from "./stripe";
 
 admin.initializeApp();
 
@@ -74,11 +76,26 @@ export const ai = functions.https.onRequest((req, res) => {
 
       // Route based on path
       const path = req.path;
+
+      // Credit endpoints
+      if (path.startsWith("/credits/")) {
+        const result = await handleCreditRequest(path, req.body, decodedToken);
+        res.status(200).json({data: result});
+        return;
+      }
+
+      // AI endpoints
       const result = await handleAIRequest(path, req.body);
       res.status(200).json({data: result});
     } catch (error) {
       if (error instanceof functions.https.HttpsError) {
-        res.status(401).json({error: error.message});
+        // Map resource-exhausted to 402
+        const statusCode = error.code === "resource-exhausted" ? 402 :
+          error.code === "unauthenticated" ? 401 :
+          error.code === "not-found" ? 404 :
+          error.code === "invalid-argument" ? 400 :
+          error.code === "permission-denied" ? 403 : 500;
+        res.status(statusCode).json({error: error.message});
         return;
       }
       console.error("AI request error:", error);
@@ -86,4 +103,29 @@ export const ai = functions.https.onRequest((req, res) => {
       res.status(500).json({error: message});
     }
   });
+});
+
+// Stripe webhook (unauthenticated - verified by Stripe signature)
+export const stripeWebhook = functions.https.onRequest((req, res) => {
+  // No CORS needed for webhooks
+  if (req.method !== "POST") {
+    res.status(405).json({error: "Method not allowed"});
+    return;
+  }
+
+  const signature = req.headers["stripe-signature"] as string;
+  if (!signature) {
+    res.status(400).json({error: "Missing stripe-signature header"});
+    return;
+  }
+
+  handleWebhookEvent(req.rawBody, signature)
+    .then(() => {
+      res.status(200).json({received: true});
+    })
+    .catch((error) => {
+      console.error("Webhook error:", error);
+      const message = error instanceof Error ? error.message : "Webhook processing failed";
+      res.status(400).json({error: message});
+    });
 });

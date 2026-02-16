@@ -4,6 +4,7 @@ import '../globals.css';
 import '../index.css';
 import ResultsPage from './ResultsPage';
 import { AuthProvider } from '../contexts/AuthContext';
+import { CreditProvider } from '../contexts/CreditContext';
 
 const root = ReactDOM.createRoot(
   document.getElementById('root') as HTMLElement
@@ -12,7 +13,9 @@ const root = ReactDOM.createRoot(
 root.render(
   <React.StrictMode>
     <AuthProvider>
-      <ResultsPage />
+      <CreditProvider>
+        <ResultsPage />
+      </CreditProvider>
     </AuthProvider>
   </React.StrictMode>
 );

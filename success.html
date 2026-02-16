@@ -22,9 +22,24 @@
       border-radius: 0.5rem;
       box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
     }
+    .check-icon {
+      width: 4rem;
+      height: 4rem;
+      margin: 0 auto 1rem;
+      background: #ecfdf5;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .check-icon svg {
+      width: 2rem;
+      height: 2rem;
+      color: #059669;
+    }
     h1 {
       color: #059669;
-      margin-bottom: 1rem;
+      margin-bottom: 0.5rem;
     }
     p {
       color: #4b5563;
@@ -40,126 +55,38 @@
       font-weight: 500;
       cursor: pointer;
       transition: background-color 0.2s;
+      font-size: 1rem;
     }
     .close-button:hover {
       background-color: #047857;
     }
-    .fallback-text {
-      display: none;
+    .note {
       margin-top: 1rem;
       font-size: 0.875rem;
       color: #6b7280;
-    }
-    .loading {
-      display: inline-block;
-      width: 1rem;
-      height: 1rem;
-      border: 2px solid #f3f3f3;
-      border-top: 2px solid #059669;
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
-      margin-right: 0.5rem;
-    }
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
     }
   </style>
 </head>
 <body>
   <div class="container">
+    <div class="check-icon">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+      </svg>
+    </div>
     <h1>Payment Successful!</h1>
-    <p>Thank you for your purchase. Your subscription has been activated and you now have full access to the Boolean Search Generator, including accurate synonyms, limiters, and operators for creating precise search strings.</p>
-    <button class="close-button" id="closeButton" disabled>
-      <span class="loading"></span>
-      Activating subscription...
-    </button>
-    <p class="fallback-text" id="fallbackText">You can now close this window and return to the extension.</p>
+    <p>Your search credits have been added to your account. They'll appear in the extension within a few seconds.</p>
+    <button class="close-button" id="closeButton">Close Window</button>
+    <p class="note">You can close this tab and return to the Patent Search Generator extension.</p>
   </div>
   <script>
-    // Function to get URL parameters
-    function getUrlParam(param) {
-      const urlParams = new URLSearchParams(window.location.search);
-      return urlParams.get(param);
-    }
-
-    // Function to update button state
-    function updateButton(text, disabled = false) {
-      const button = document.getElementById('closeButton');
-      button.disabled = disabled;
-      button.innerHTML = disabled ? 
-        '<span class="loading"></span>Activating subscription...' : 
-        text;
-    }
-
-    // Function to handle subscription activation
-    async function activateSubscription() {
-      const sessionId = getUrlParam('session_id');
-      if (!sessionId) {
-        console.error('No session ID found');
-        updateButton('Close Window', false);
-        return;
-      }
-
-      // First notify the extension about successful payment
-      if (chrome && chrome.runtime && chrome.runtime.sendMessage) {
-        try {
-          // Send PAYMENT_SUCCESS message
-          await new Promise((resolve, reject) => {
-            chrome.runtime.sendMessage({ 
-              type: "PAYMENT_SUCCESS",
-              sessionId: sessionId
-            }, response => {
-              if (chrome.runtime.lastError) {
-                reject(chrome.runtime.lastError);
-              } else {
-                resolve(response);
-              }
-            });
-          });
-
-          // Wait a bit to allow Firestore to update
-          await new Promise(resolve => setTimeout(resolve, 2000));
-
-          // Update button state
-          updateButton('Close Window', false);
-        } catch (error) {
-          console.error('Error activating subscription:', error);
-          updateButton('Close Window', false);
-        }
-      } else {
-        console.error('Chrome runtime not available');
-        updateButton('Close Window', false);
-      }
-    }
-
-    // Handle close button click
     document.getElementById('closeButton').addEventListener('click', function() {
-      // Try to close through extension
-      if (chrome && chrome.runtime && chrome.runtime.sendMessage) {
-        chrome.runtime.sendMessage({ 
-          type: "PAYMENT_SUCCESS", 
-          action: "close_window" 
-        }, function(response) {
-          if (!response || !response.success) {
-            tryCloseWindow();
-          }
-        });
-      } else {
-        tryCloseWindow();
-      }
-    });
-
-    function tryCloseWindow() {
       try {
         window.close();
       } catch (e) {
-        document.getElementById('fallbackText').style.display = 'block';
+        // Can't close — no-op, user can close manually
       }
-    }
-
-    // Start subscription activation when page loads
-    window.addEventListener('load', activateSubscription);
+    });
   </script>
 </body>
 </html>

@@ -42,6 +42,21 @@ module.exports = {
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
       },
+      keyframes: {
+        creditFloat: {
+          "0%": { opacity: "1", transform: "translateY(0)" },
+          "100%": { opacity: "0", transform: "translateY(-24px)" },
+        },
+        creditBump: {
+          "0%": { transform: "scale(1)" },
+          "50%": { transform: "scale(1.15)" },
+          "100%": { transform: "scale(1)" },
+        },
+      },
+      animation: {
+        "credit-float": "creditFloat 2s ease-out forwards",
+        "credit-bump": "creditBump 0.3s ease-out",
+      },
     },
   },
   plugins: [],

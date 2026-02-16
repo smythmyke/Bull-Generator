@@ -7,6 +7,7 @@ import UnifiedSearchTab from './tabs/UnifiedSearchTab';
 import SynonymSearch from './SynonymSearch';
 import DefinitionsTab from './DefinitionsTab';
 import ConceptMapperTab from './tabs/ConceptMapperTab';
+import CreditsTab from './tabs/CreditsTab';
 
 export interface TechnicalSynonyms {
   [key: string]: string[];
@@ -29,7 +30,12 @@ export const stopWords = new Set(['a', 'an', 'the', 'and', 'or', 'but', 'if', 't
 
 type ConnectionStatus = 'disconnected' | 'checking' | 'connected' | 'wrong-page';
 
-const BooleanSearchGenerator = () => {
+interface BooleanSearchGeneratorProps {
+  activeTab?: string;
+  onTabChange?: (tab: string) => void;
+}
+
+const BooleanSearchGenerator: React.FC<BooleanSearchGeneratorProps> = ({ activeTab, onTabChange }) => {
   const [searchSystem, setSearchSystem] = useState<string>('google-patents');
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
   const [connectedUrl, setConnectedUrl] = useState<string>('');
@@ -117,6 +123,14 @@ const BooleanSearchGenerator = () => {
               Open Patents
             </Button>
           ) : null}
+          <Button
+            variant={activeTab === 'credits' ? 'default' : 'ghost'}
+            size="sm"
+            className="h-5 text-xs px-2"
+            onClick={() => onTabChange?.(activeTab === 'credits' ? 'search' : 'credits')}
+          >
+            Credits
+          </Button>
           <Button variant="ghost" size="sm" className="h-5 text-xs px-2" onClick={checkConnection}>
             Refresh
           </Button>
@@ -143,7 +157,7 @@ const BooleanSearchGenerator = () => {
         </CardHeader>
 
         <CardContent className="pb-3">
-          <Tabs defaultValue="search" className="space-y-3">
+          <Tabs value={activeTab || 'search'} onValueChange={onTabChange} className="space-y-3">
             <TabsList className="grid w-full grid-cols-4 h-8">
               <TabsTrigger value="search" className="text-xs px-1">Search</TabsTrigger>
               <TabsTrigger value="synonyms" className="text-xs px-1">Synonyms</TabsTrigger>
@@ -165,6 +179,10 @@ const BooleanSearchGenerator = () => {
 
             <TabsContent value="ai-analysis">
               <ConceptMapperTab />
+            </TabsContent>
+
+            <TabsContent value="credits">
+              <CreditsTab />
             </TabsContent>
           </Tabs>
         </CardContent>

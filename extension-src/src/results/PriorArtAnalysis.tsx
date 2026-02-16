@@ -7,6 +7,8 @@ import {
   Section102Candidate,
   Section103Combination,
 } from '../services/apiService';
+import { useCreditGate } from '../hooks/useCreditGate';
+import InsufficientCreditsModal from '../components/InsufficientCreditsModal';
 
 interface PatentForAnalysis {
   patentId: string;
@@ -49,8 +51,15 @@ const PriorArtAnalysis: React.FC<PriorArtAnalysisProps> = ({ query, concepts: pr
   const [result, setResult] = useState<PriorArtAnalysisResponse | null>(null);
   const [usedConcepts, setUsedConcepts] = useState<{ name: string; synonyms: string[] }[]>([]);
   const [hoveredCell, setHoveredCell] = useState<{ patentId: string; concept: string } | null>(null);
+  const { checkingAction, showPurchasePrompt, canSearch, withCreditCheck, dismissPurchasePrompt } = useCreditGate();
 
   const runAnalysis = async () => {
+    await withCreditCheck('examiner-report', 1, async () => {
+      await doRunAnalysis();
+    });
+  };
+
+  const doRunAnalysis = async () => {
     setError('');
     setResult(null);
 
@@ -124,20 +133,26 @@ const PriorArtAnalysis: React.FC<PriorArtAnalysisProps> = ({ query, concepts: pr
     return (
       <div className="max-w-5xl mx-auto px-6 py-12 text-center">
         <div className="max-w-lg mx-auto space-y-4">
-          <h2 className="text-lg font-semibold">102/103 Prior Art Analysis</h2>
+          <h2 className="text-lg font-semibold">Examiner's Report</h2>
           <p className="text-sm text-muted-foreground">
             Analyze the top patents through the lens of patentability. Evaluates concept coverage
             (which patents teach which elements), Section 102 anticipation (any single reference
             covering all elements), and Section 103 obviousness (combinations of references).
           </p>
-          <button
-            onClick={runAnalysis}
-            className="px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 font-semibold text-sm"
-          >
-            Run Prior Art Analysis
-          </button>
+          {showPurchasePrompt ? (
+            <InsufficientCreditsModal onDismiss={dismissPurchasePrompt} />
+          ) : (
+            <button
+              onClick={runAnalysis}
+              disabled={!canSearch || checkingAction !== null}
+              className="px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {checkingAction === 'examiner-report' ? 'Checking credits...' : 'Run Prior Art Analysis (1 credit)'}
+            </button>
+          )}
           <p className="text-xs text-muted-foreground">
-            Analyzes the top 12 ranked patents against {propConcepts?.length || 'extracted'} concepts
+            Analyzes the top 12 ranked patents against {propConcepts?.length || 'extracted'} concepts.
+            Uses 1 credit.
           </p>
         </div>
       </div>

@@ -2,17 +2,13 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User } from 'firebase/auth';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
 import { app } from '../firebaseConfig';
-import { getFirestore, doc, onSnapshot } from 'firebase/firestore';
 
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
-  hasPurchased: boolean;
   isLoading: boolean;
   error: string | null;
   loading: boolean;
-  subscriptionStatus: string | null;
-  subscriptionEndDate: number | null;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
@@ -23,12 +19,9 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType>({
   user: null,
   isAuthenticated: false,
-  hasPurchased: false,
   isLoading: true,
   error: null,
   loading: false,
-  subscriptionStatus: null,
-  subscriptionEndDate: null,
   login: async () => {},
   register: async () => {},
   signInWithGoogle: async () => {},
@@ -40,74 +33,21 @@ export const useAuthContext = () => useContext(AuthContext);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [hasPurchased, setHasPurchased] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [subscriptionStatus, setSubscriptionStatus] = useState<string | null>(null);
-  const [subscriptionEndDate, setSubscriptionEndDate] = useState<number | null>(null);
-  const db = getFirestore(app);
 
   useEffect(() => {
-    let unsubscribeFirestore: (() => void) | null = null;
-
     const auth = getAuth(app);
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
-      
-      // Clean up previous Firestore subscription
-      if (unsubscribeFirestore) {
-        unsubscribeFirestore();
-        unsubscribeFirestore = null;
-      }
-
-      if (currentUser) {
-        // Set up subscription status listener
-        unsubscribeFirestore = onSnapshot(
-          doc(db, 'customers', currentUser.uid),
-          (snapshot) => {
-            if (snapshot.exists()) {
-              const data = snapshot.data();
-              // Check both hasPurchased and subscriptionStatus
-              const isActive = data?.hasPurchased === true && 
-                             (data?.subscriptionStatus === 'active' || 
-                              data?.subscriptionStatus === 'trialing');
-              setHasPurchased(isActive);
-              setSubscriptionStatus(data?.subscriptionStatus || null);
-              
-              // Convert Firestore Timestamp to Unix timestamp (milliseconds)
-              const endDate = data?.subscriptionCurrentPeriodEnd;
-              setSubscriptionEndDate(endDate ? endDate.toMillis() : null);
-            } else {
-              setHasPurchased(false);
-              setSubscriptionStatus(null);
-              setSubscriptionEndDate(null);
-            }
-            setIsLoading(false);
-          },
-          (error) => {
-            console.error('Error fetching subscription status:', error);
-            setHasPurchased(false);
-            setSubscriptionStatus(null);
-            setSubscriptionEndDate(null);
-            setIsLoading(false);
-          }
-        );
-      } else {
-        setHasPurchased(false);
-        setSubscriptionStatus(null);
-        setSubscriptionEndDate(null);
-        setIsLoading(false);
-      }
+      setIsLoading(false);
     });
 
     return () => {
       unsubscribeAuth();
-      if (unsubscribeFirestore) {
-        unsubscribeFirestore();
-      }
     };
-  }, [db]);
+  }, []);
 
   const login = async (email: string, password: string) => {
     try {
@@ -191,12 +131,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const value = {
     user,
     isAuthenticated: !!user,
-    hasPurchased,
     isLoading,
     error,
     loading,
-    subscriptionStatus,
-    subscriptionEndDate,
     login,
     register,
     signInWithGoogle,

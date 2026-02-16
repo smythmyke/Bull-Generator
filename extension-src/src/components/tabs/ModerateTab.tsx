@@ -10,12 +10,10 @@ import { handleKeyPress } from '../booleanSearchUtils';
 import useBooleanSearchState from '../../hooks/useBooleanSearchState';
 import { fields } from '../BooleanSearchGenerator';
 import { SearchResult } from '../SearchResult';
-import { useAuthContext } from '../../contexts/AuthContext';
 
 const ModerateTab = () => {
   const isMounted = useRef(true);
   const contentRef = useRef<HTMLDivElement>(null);
-  const { hasPurchased } = useAuthContext();
 
   const {
     inputText,
@@ -81,17 +79,6 @@ const ModerateTab = () => {
       </div>
     );
   };
-
-  if (!hasPurchased) {
-    return (
-      <Alert variant="destructive" className="bg-red-50 border-red-200">
-        <AlertTriangle className="h-4 w-4 text-red-600" />
-        <AlertDescription className="text-red-600 font-medium">
-          Moderate boolean search is only available in the premium version. Please upgrade to access this feature.
-        </AlertDescription>
-      </Alert>
-    );
-  }
 
   return (
     <div className="space-y-4" ref={contentRef}>

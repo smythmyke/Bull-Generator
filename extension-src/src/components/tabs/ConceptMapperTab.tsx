@@ -19,6 +19,10 @@ import {
   UserRefinementSelections,
 } from '../../utils/patentSearchPipeline';
 import RefinementDashboard from '../RefinementDashboard';
+import { useCreditGate } from '../../hooks/useCreditGate';
+import { useCreditContext } from '../../contexts/CreditContext';
+import InsufficientCreditsModal from '../InsufficientCreditsModal';
+import AnimatedCreditPill from '../AnimatedCreditPill';
 
 interface ManagedConcept extends ExtractedConcept {
   id: string;
@@ -45,6 +49,8 @@ function nextId(): string {
 }
 
 const ConceptMapperTab: React.FC = () => {
+  const { checkingAction, showPurchasePrompt, canSearch, withCreditCheck, dismissPurchasePrompt } = useCreditGate();
+  const { credits } = useCreditContext();
   const [inputText, setInputText] = useState('');
   const [concepts, setConcepts] = useState<ManagedConcept[]>([]);
   const [isExtracting, setIsExtracting] = useState(false);
@@ -234,71 +240,77 @@ const ConceptMapperTab: React.FC = () => {
 
   const handleSearch = async (level: 'broad' | 'moderate' | 'narrow') => {
     if (!hasEnabledConcepts) return;
-    setSearchingField(level);
-    setSearchProgress('Starting search...');
-    setError('');
 
-    // Build a keyword-style query from enabled concept names instead of the full paragraph
-    const smartRawText = concepts
-      .filter(c => c.enabled)
-      .map(c => c.name.includes(' ') ? `"${c.name}"` : c.name)
-      .join(' ');
+    await withCreditCheck(level, 1, async () => {
+      setSearchingField(level);
+      setSearchProgress('Starting search...');
+      setError('');
 
-    try {
-      await runTripleSearch({
-        rawText: smartRawText,
-        booleanQuery: generatedSearches[level],
-        includeNPL: true,
-        concepts: concepts.filter(c => c.enabled).map(c => ({ name: c.name, synonyms: c.synonyms })),
-        onProgress: (msg) => {
-          if (isMounted.current) setSearchProgress(msg);
-        },
-      });
-      if (isMounted.current) setSearchProgress('Done!');
-    } catch (err) {
-      if (isMounted.current) {
-        setError(err instanceof Error ? err.message : 'Search failed');
-      }
-    } finally {
-      setTimeout(() => {
+      // Build a keyword-style query from enabled concept names instead of the full paragraph
+      const smartRawText = concepts
+        .filter(c => c.enabled)
+        .map(c => c.name.includes(' ') ? `"${c.name}"` : c.name)
+        .join(' ');
+
+      try {
+        await runTripleSearch({
+          rawText: smartRawText,
+          booleanQuery: generatedSearches[level],
+          includeNPL: true,
+          concepts: concepts.filter(c => c.enabled).map(c => ({ name: c.name, synonyms: c.synonyms })),
+          onProgress: (msg) => {
+            if (isMounted.current) setSearchProgress(msg);
+          },
+        });
+        if (isMounted.current) setSearchProgress('Done!');
+      } catch (err) {
         if (isMounted.current) {
-          setSearchingField(null);
-          setSearchProgress('');
+          setError(err instanceof Error ? err.message : 'Search failed');
         }
-      }, 2000);
-    }
+      } finally {
+        setTimeout(() => {
+          if (isMounted.current) {
+            setSearchingField(null);
+            setSearchProgress('');
+          }
+        }, 2000);
+      }
+    });
   };
 
   // Pro search handlers
   const handleProAutoSearch = async () => {
     if (!hasEnabledConcepts) return;
-    setSearchingField('pro-auto');
-    setError('');
 
-    try {
-      await runProAutoSearch({
-        originalParagraph: inputText.trim(),
-        concepts: conceptsForSearch,
-        onProgress: (progress: ProSearchProgress) => {
-          if (isMounted.current) {
-            setProSearchPhase(progress.phase);
-            setProSearchPercent(progress.percent);
-            setProSearchMessage(progress.message);
-          }
-        },
-      });
-    } catch (err) {
-      if (isMounted.current) {
-        setError(err instanceof Error ? err.message : 'Pro Auto search failed');
+    await withCreditCheck('pro-auto', 2, async () => {
+      setSearchingField('pro-auto');
+      setError('');
+
+      try {
+        await runProAutoSearch({
+          originalParagraph: inputText.trim(),
+          concepts: conceptsForSearch,
+          onProgress: (progress: ProSearchProgress) => {
+            if (isMounted.current) {
+              setProSearchPhase(progress.phase);
+              setProSearchPercent(progress.percent);
+              setProSearchMessage(progress.message);
+            }
+          },
+        });
+      } catch (err) {
+        if (isMounted.current) {
+          setError(err instanceof Error ? err.message : 'Pro Auto search failed');
+        }
+      } finally {
+        if (isMounted.current) {
+          setSearchingField(null);
+          setProSearchPhase('');
+          setProSearchPercent(0);
+          setProSearchMessage('');
+        }
       }
-    } finally {
-      if (isMounted.current) {
-        setSearchingField(null);
-        setProSearchPhase('');
-        setProSearchPercent(0);
-        setProSearchMessage('');
-      }
-    }
+    });
   };
 
   const handleRefinementContinue = useCallback(() => {
@@ -357,50 +369,53 @@ const ConceptMapperTab: React.FC = () => {
 
   const handleProInteractiveSearch = async () => {
     if (!hasEnabledConcepts) return;
-    setSearchingField('pro-interactive');
-    setError('');
 
-    try {
-      await runProInteractiveSearch({
-        originalParagraph: inputText.trim(),
-        concepts: conceptsForSearch,
-        onProgress: (progress: ProSearchProgress) => {
-          if (isMounted.current) {
-            setProSearchPhase(progress.phase);
-            setProSearchPercent(progress.percent);
-            setProSearchMessage(progress.message);
-          }
-        },
-        onPause: (data: RefinementDashboardData) => {
-          return new Promise<UserRefinementSelections>((resolve) => {
+    await withCreditCheck('pro-interactive', 3, async () => {
+      setSearchingField('pro-interactive');
+      setError('');
+
+      try {
+        await runProInteractiveSearch({
+          originalParagraph: inputText.trim(),
+          concepts: conceptsForSearch,
+          onProgress: (progress: ProSearchProgress) => {
             if (isMounted.current) {
-              // Pre-select top patent IDs (first 3) and top CPC codes (first 3)
-              const preselectedPatents = new Set(data.patents.slice(0, 3).map((p: any) => p.patentId));
-              const preselectedCPCs = new Set(data.cpcSuggestions.slice(0, 3).map((c) => c.code));
-
-              setRefinementData(data);
-              setSelectedPatentIds(preselectedPatents);
-              setSelectedCPCCodes(preselectedCPCs);
-              setAcceptedSwapIndices(new Set());
-              setShowRefinementDashboard(true);
-              refinementResolveRef.current = resolve;
+              setProSearchPhase(progress.phase);
+              setProSearchPercent(progress.percent);
+              setProSearchMessage(progress.message);
             }
-          });
-        },
-      });
-    } catch (err) {
-      if (isMounted.current) {
-        setError(err instanceof Error ? err.message : 'Pro Interactive search failed');
+          },
+          onPause: (data: RefinementDashboardData) => {
+            return new Promise<UserRefinementSelections>((resolve) => {
+              if (isMounted.current) {
+                // Pre-select top patent IDs (first 3) and top CPC codes (first 3)
+                const preselectedPatents = new Set(data.patents.slice(0, 3).map((p: any) => p.patentId));
+                const preselectedCPCs = new Set(data.cpcSuggestions.slice(0, 3).map((c) => c.code));
+
+                setRefinementData(data);
+                setSelectedPatentIds(preselectedPatents);
+                setSelectedCPCCodes(preselectedCPCs);
+                setAcceptedSwapIndices(new Set());
+                setShowRefinementDashboard(true);
+                refinementResolveRef.current = resolve;
+              }
+            });
+          },
+        });
+      } catch (err) {
+        if (isMounted.current) {
+          setError(err instanceof Error ? err.message : 'Pro Interactive search failed');
+        }
+      } finally {
+        if (isMounted.current) {
+          setSearchingField(null);
+          setProSearchPhase('');
+          setProSearchPercent(0);
+          setProSearchMessage('');
+          setShowRefinementDashboard(false);
+        }
       }
-    } finally {
-      if (isMounted.current) {
-        setSearchingField(null);
-        setProSearchPhase('');
-        setProSearchPercent(0);
-        setProSearchMessage('');
-        setShowRefinementDashboard(false);
-      }
-    }
+    });
   };
 
   const isProSearching = searchingField === 'pro-auto' || searchingField === 'pro-interactive';
@@ -572,10 +587,18 @@ const ConceptMapperTab: React.FC = () => {
         </div>
       )}
 
+      {/* Insufficient Credits Modal */}
+      {showPurchasePrompt && (
+        <InsufficientCreditsModal onDismiss={dismissPurchasePrompt} />
+      )}
+
       {/* D. Mode Selector */}
       {hasEnabledConcepts && (
         <div className="space-y-2">
-          <Label className="text-xs font-semibold">Search Mode</Label>
+          <div className="flex items-center justify-between">
+            <Label className="text-xs font-semibold">Search Mode</Label>
+            <AnimatedCreditPill />
+          </div>
           <div className="grid grid-cols-3 gap-1 p-1 bg-secondary/30 rounded-lg">
             {([
               { mode: 'quick' as ProSearchMode, label: 'Quick', desc: '3 searches' },
@@ -676,12 +699,12 @@ const ConceptMapperTab: React.FC = () => {
                     <SearchResult result={search} />
                     <Button
                       onClick={() => handleSearch(level)}
-                      disabled={!!searchingField}
+                      disabled={!!searchingField || !canSearch || checkingAction !== null}
                       className="w-full mt-2 h-9 text-sm font-semibold gap-2"
                       size="sm"
                     >
                       <Search className="h-4 w-4" />
-                      {isThisSearching ? 'Searching...' : `Search ${level.charAt(0).toUpperCase() + level.slice(1)} on Google Patents`}
+                      {checkingAction === level ? 'Checking credits...' : isThisSearching ? 'Searching...' : `Search ${level.charAt(0).toUpperCase() + level.slice(1)} (1 credit)`}
                     </Button>
                   </div>
                 );
@@ -690,22 +713,22 @@ const ConceptMapperTab: React.FC = () => {
           ) : searchMode === 'pro-auto' ? (
             <Button
               onClick={handleProAutoSearch}
-              disabled={!!searchingField}
+              disabled={!!searchingField || !canSearch || checkingAction !== null}
               className="w-full h-11 text-sm font-bold gap-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
               size="sm"
             >
               <Search className="h-4 w-4" />
-              {searchingField === 'pro-auto' ? 'Running Pro Auto...' : 'Run Pro Auto Search'}
+              {checkingAction === 'pro-auto' ? 'Checking credits...' : searchingField === 'pro-auto' ? 'Running Pro Auto...' : 'Run Pro Auto Search (2 credits)'}
             </Button>
           ) : (
             <Button
               onClick={handleProInteractiveSearch}
-              disabled={!!searchingField}
+              disabled={!!searchingField || !canSearch || checkingAction !== null}
               className="w-full h-11 text-sm font-bold gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700"
               size="sm"
             >
               <Search className="h-4 w-4" />
-              {searchingField === 'pro-interactive' ? 'Running Pro Interactive...' : 'Run Pro Interactive Search'}
+              {checkingAction === 'pro-interactive' ? 'Checking credits...' : searchingField === 'pro-interactive' ? 'Running Pro Interactive...' : 'Run Pro Interactive Search (3 credits)'}
             </Button>
           )}
         </div>

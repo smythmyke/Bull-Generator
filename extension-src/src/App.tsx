@@ -1,10 +1,11 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import { useAuthContext } from './contexts/AuthContext';
 import AuthPage from './components/AuthPage';
 import { Button } from './components/ui/button';
 import { LoadingSpinner } from './components/ui/loading-spinner';
 import { Alert } from './components/ui/alert';
 import BooleanSearchGenerator from './components/BooleanSearchGenerator';
+import AnimatedCreditPill from './components/AnimatedCreditPill';
 
 const App: React.FC = () => {
   const {
@@ -14,6 +15,8 @@ const App: React.FC = () => {
     error,
     logout
   } = useAuthContext();
+
+  const [activeTab, setActiveTab] = useState('search');
 
   const handleAuth = useCallback(() => {
     // Authentication was successful
@@ -47,9 +50,12 @@ const App: React.FC = () => {
                 <p className="text-xs text-muted-foreground truncate max-w-[180px]">{user.email}</p>
               </div>
             </div>
-            <Button onClick={handleLogout} variant="outline" size="sm">
-              Logout
-            </Button>
+            <div className="flex items-center gap-2">
+              <AnimatedCreditPill onClick={() => setActiveTab('credits')} />
+              <Button onClick={handleLogout} variant="outline" size="sm">
+                Logout
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -60,7 +66,7 @@ const App: React.FC = () => {
                 {error}
               </Alert>
             )}
-            <BooleanSearchGenerator />
+            <BooleanSearchGenerator activeTab={activeTab} onTabChange={setActiveTab} />
           </div>
         </main>
       </>

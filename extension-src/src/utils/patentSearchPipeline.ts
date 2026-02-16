@@ -454,7 +454,14 @@ export async function runTripleSearch(params: TripleSearchParams): Promise<void>
 
   const resultsTab = await chrome.tabs.create({
     url: chrome.runtime.getURL("results.html"),
+    active: true,
   });
+  if (resultsTab.id) {
+    await chrome.tabs.update(resultsTab.id, { active: true });
+    if (resultsTab.windowId) {
+      await chrome.windows.update(resultsTab.windowId, { focused: true });
+    }
+  }
   console.log(`[PSG] Step 6: Results page opened in tab ${resultsTab.id}`);
 
   onProgress?.("Done!");
@@ -1017,7 +1024,13 @@ export async function runProAutoSearch(params: ProAutoSearchParams): Promise<voi
   };
 
   await chrome.storage.local.set(storagePayload);
-  await chrome.tabs.create({ url: chrome.runtime.getURL("results.html") });
+  const resultsTabPro = await chrome.tabs.create({ url: chrome.runtime.getURL("results.html"), active: true });
+  if (resultsTabPro.id) {
+    await chrome.tabs.update(resultsTabPro.id, { active: true });
+    if (resultsTabPro.windowId) {
+      await chrome.windows.update(resultsTabPro.windowId, { focused: true });
+    }
+  }
 
   onProgress({ phase: "done", message: "Done!", percent: 100 });
   console.log("[PSG-Pro] ========== PRO AUTO SEARCH COMPLETE ==========");
@@ -1360,7 +1373,13 @@ export async function runProInteractiveSearch(params: ProInteractiveSearchParams
   };
 
   await chrome.storage.local.set(storagePayload);
-  await chrome.tabs.create({ url: chrome.runtime.getURL("results.html") });
+  const resultsTabProI = await chrome.tabs.create({ url: chrome.runtime.getURL("results.html"), active: true });
+  if (resultsTabProI.id) {
+    await chrome.tabs.update(resultsTabProI.id, { active: true });
+    if (resultsTabProI.windowId) {
+      await chrome.windows.update(resultsTabProI.windowId, { focused: true });
+    }
+  }
 
   onProgress({ phase: "done", message: "Done!", percent: 100 });
   console.log("[PSG-ProI] ========== PRO INTERACTIVE SEARCH COMPLETE ==========");

@@ -1,6 +1,5 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, onAuthStateChanged, User } from 'firebase/auth';
-import { getFirestore, doc, getDoc } from 'firebase/firestore';
 
 // Types
 interface AuthState {
@@ -10,7 +9,6 @@ interface AuthState {
     email: string | null;
     emailVerified: boolean;
   } | null;
-  hasPurchased: boolean;
 }
 
 // Firebase config (safe to be public - security enforced via Security Rules)
@@ -26,27 +24,24 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
-const db = getFirestore(app);
 
 // Initialize authentication state
 let authState: AuthState = {
   isAuthenticated: false,
-  user: null,
-  hasPurchased: false
+  user: null
 };
 
-// ── Side Panel Setup ──
+// -- Side Panel Setup --
 
 // Set panel behavior immediately (runs on every service worker start)
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 
-// ── Firebase Auth ──
+// -- Firebase Auth --
 
 // Set up Firebase auth listener
 onAuthStateChanged(auth, async (user: User | null) => {
   if (user) {
     authState = {
-      ...authState,
       isAuthenticated: true,
       user: {
         uid: user.uid,
@@ -54,48 +49,18 @@ onAuthStateChanged(auth, async (user: User | null) => {
         emailVerified: user.emailVerified
       }
     };
-
-    await checkAndUpdateSubscriptionStatus(user.uid);
   } else {
     authState = {
       isAuthenticated: false,
-      user: null,
-      hasPurchased: false
+      user: null
     };
-    handleAuthStateChange(authState);
   }
+  await handleAuthStateChange(authState);
 });
 
-// Check and update subscription status
-async function checkAndUpdateSubscriptionStatus(userId: string): Promise<void> {
-  try {
-    const customerRef = doc(db, 'customers', userId);
-    const docSnap = await getDoc(customerRef);
-
-    if (docSnap.exists()) {
-      const data = docSnap.data();
-      const isActive = data?.hasPurchased === true &&
-                      (data?.subscriptionStatus === 'active' ||
-                       data?.subscriptionStatus === 'trialing');
-
-      if (isActive !== authState.hasPurchased) {
-        await handleAuthStateChange({ ...authState, hasPurchased: isActive });
-      }
-    } else {
-      await handleAuthStateChange({ ...authState, hasPurchased: false });
-    }
-  } catch (error) {
-    console.error('Error checking subscription status:', error);
-    await handleAuthStateChange({ ...authState, hasPurchased: false });
-  }
-}
-
 // Handle authentication state changes
-async function handleAuthStateChange(newState: Partial<AuthState>) {
-  authState = {
-    ...authState,
-    ...newState
-  };
+async function handleAuthStateChange(newState: AuthState) {
+  authState = newState;
 
   try {
     await chrome.storage.local.set({ authState });
@@ -109,18 +74,6 @@ chrome.runtime.onMessage.addListener((message: any, sender, sendResponse) => {
   switch (message.type) {
     case 'GET_AUTH_STATE':
       sendResponse(authState);
-      break;
-
-    case 'CHECK_PURCHASE_STATUS':
-      if (message.payload?.userId) {
-        checkAndUpdateSubscriptionStatus(message.payload.userId)
-          .then(() => sendResponse({ success: true }))
-          .catch((error) => {
-            console.error('Error checking purchase status:', error);
-            sendResponse({ success: false, error: error.message });
-          });
-        return true;
-      }
       break;
   }
 });
@@ -137,9 +90,6 @@ chrome.runtime.onStartup.addListener(() => {
   chrome.storage.local.get(['authState'], (result) => {
     if (result.authState) {
       authState = result.authState;
-      if (authState.user?.uid) {
-        checkAndUpdateSubscriptionStatus(authState.user.uid);
-      }
     }
   });
 });
