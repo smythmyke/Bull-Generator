@@ -2,7 +2,7 @@ import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 import cors from "cors";
 import {handleAIRequest} from "./ai";
-import {handleCreditRequest} from "./credits";
+import {handleCreditRequest, getBalance} from "./credits";
 import {handleWebhookEvent} from "./stripe";
 
 admin.initializeApp();
@@ -84,7 +84,16 @@ export const ai = functions.https.onRequest((req, res) => {
         return;
       }
 
-      // AI endpoints
+      // AI endpoints — verify user has credits before processing
+      const db = admin.firestore();
+      const balance = await getBalance(db, decodedToken.uid);
+      if (balance.freeSearchesRemaining <= 0 && balance.balance <= 0) {
+        res.status(402).json({
+          error: "No searches remaining. Purchase credits to continue.",
+        });
+        return;
+      }
+
       const result = await handleAIRequest(path, req.body);
       res.status(200).json({data: result});
     } catch (error) {

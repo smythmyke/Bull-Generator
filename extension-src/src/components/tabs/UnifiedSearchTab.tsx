@@ -10,6 +10,8 @@ import { copyToClipboard } from '../booleanSearchUtils';
 import { generateSearchStrings, SearchResponse } from '../../services/apiService';
 import { stopWords, fields } from '../BooleanSearchGenerator';
 import { sanitizeForGooglePatents, runTripleSearch } from '../../utils/patentSearchPipeline';
+import { useCreditGate } from '../../hooks/useCreditGate';
+import InsufficientCreditsModal from '../InsufficientCreditsModal';
 
 interface SearchState {
   broad: string;
@@ -19,6 +21,7 @@ interface SearchState {
 }
 
 const UnifiedSearchTab: React.FC = () => {
+  const { showPurchasePrompt, withCreditCheck, dismissPurchasePrompt } = useCreditGate();
   const [inputText, setInputText] = useState('');
   const [selectedField, setSelectedField] = useState('ALL');
   const [selectedCC, setSelectedCC] = useState('US');
@@ -133,28 +136,30 @@ const UnifiedSearchTab: React.FC = () => {
     setErrors([]);
     setResults(null);
 
-    try {
-      const response: SearchResponse = await generateSearchStrings(words, searchSystem);
+    await withCreditCheck('search', 1, async () => {
+      try {
+        const response: SearchResponse = await generateSearchStrings(words, searchSystem);
 
-      if (isMounted.current) {
-        setResults({
-          broad: response.broad,
-          moderate: response.moderate,
-          narrow: response.narrow,
-          terms: response.terms || [],
-        });
+        if (isMounted.current) {
+          setResults({
+            broad: response.broad,
+            moderate: response.moderate,
+            narrow: response.narrow,
+            terms: response.terms || [],
+          });
+        }
+      } catch (error) {
+        if (isMounted.current) {
+          const message = error instanceof Error ? error.message : 'Error generating search strings';
+          setErrors([message]);
+        }
       }
-    } catch (error) {
-      if (isMounted.current) {
-        const message = error instanceof Error ? error.message : 'Error generating search strings';
-        setErrors([message]);
-      }
-    } finally {
-      if (isMounted.current) {
-        setIsLoading(false);
-      }
+    });
+
+    if (isMounted.current) {
+      setIsLoading(false);
     }
-  }, [inputText, searchSystem]);
+  }, [inputText, searchSystem, withCreditCheck]);
 
   const handleKeyPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -330,6 +335,11 @@ const UnifiedSearchTab: React.FC = () => {
             <span className="text-sm">{searchProgress}</span>
           </div>
         </div>
+      )}
+
+      {/* Purchase Prompt */}
+      {showPurchasePrompt && (
+        <InsufficientCreditsModal onDismiss={dismissPurchasePrompt} />
       )}
     </div>
   );
