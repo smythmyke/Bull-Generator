@@ -1,7 +1,10 @@
 /* Global styles */
 :root {
-    --primary-red: #FF3B30;
-    --dark-gray: #333333;
+    --primary-blue: #3B82F6;
+    --primary-blue-dark: #2563EB;
+    --primary-purple: #7C3AED;
+    --dark-gray: #1E293B;
+    --light-bg: #F8FAFC;
 }
 
 body {
@@ -10,57 +13,113 @@ body {
 
 /* Logo and header styles */
 .logo-img {
-    width: 40px;
-    height: 40px;
+    width: 36px;
+    height: 36px;
     object-fit: contain;
+}
+
+/* Gradient text */
+.gradient-text {
+    background: linear-gradient(135deg, var(--primary-blue), var(--primary-purple));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
 }
 
 /* Button styles */
 .primary-button {
-    background-color: var(--primary-red);
-    transition: background-color 0.2s ease;
+    background: linear-gradient(135deg, var(--primary-blue), var(--primary-purple));
+    transition: all 0.2s ease;
+    box-shadow: 0 4px 14px 0 rgba(59, 130, 246, 0.35);
 }
 
 .primary-button:hover {
-    background-color: #E5352B;
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px 0 rgba(59, 130, 246, 0.45);
+}
+
+.secondary-button {
+    background: white;
+    color: var(--primary-blue);
+    border: 2px solid var(--primary-blue);
+    transition: all 0.2s ease;
+}
+
+.secondary-button:hover {
+    background: var(--primary-blue);
+    color: white;
+}
+
+/* Hero section */
+.hero-gradient {
+    background: linear-gradient(135deg, #EFF6FF 0%, #F5F3FF 50%, #FDF2F8 100%);
 }
 
 /* Feature list styles */
 .feature-check {
-    width: 16px;
-    height: 16px;
-    color: #22C55E;
+    width: 20px;
+    height: 20px;
+    color: var(--primary-blue);
     margin-right: 8px;
+    flex-shrink: 0;
 }
 
 /* Card styles */
-.strategy-card {
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+.feature-card {
+    transition: all 0.3s ease;
+    border: 1px solid #E2E8F0;
+    background: white;
 }
 
-.strategy-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+.feature-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 24px -4px rgba(59, 130, 246, 0.15);
+    border-color: var(--primary-blue);
+}
+
+.feature-card .icon-wrapper {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 1rem;
 }
 
 /* Pricing section */
 .pricing-card {
-    border: 1px solid #E5E7EB;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    border: 1px solid #E2E8F0;
+    transition: all 0.3s ease;
+    background: white;
 }
 
 .pricing-card:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    box-shadow: 0 8px 24px -4px rgba(59, 130, 246, 0.15);
 }
 
-/* How it works section */
+/* Step cards */
 .step-card {
-    transition: transform 0.2s ease;
+    transition: all 0.3s ease;
 }
 
 .step-card:hover {
     transform: translateY(-2px);
+}
+
+.step-number {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--primary-blue), var(--primary-purple));
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 1.25rem;
+    margin: 0 auto 0.75rem;
 }
 
 /* Responsive adjustments */
@@ -69,3 +128,24 @@ body {
         font-size: 2.5rem;
     }
 }
+
+/* Animations */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.animate-fade-in {
+    animation: fadeInUp 0.6s ease-out forwards;
+}
+
+.animate-delay-1 { animation-delay: 0.1s; opacity: 0; }
+.animate-delay-2 { animation-delay: 0.2s; opacity: 0; }
+.animate-delay-3 { animation-delay: 0.3s; opacity: 0; }
+.animate-delay-4 { animation-delay: 0.4s; opacity: 0; }

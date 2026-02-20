@@ -3,150 +3,242 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bull Generator - AI-Powered Patent Search Tool</title>
-    <meta name="description" content="Generate professional boolean search strings for patent databases instantly. AI-powered broad, moderate, and narrow strategies with concept mapping and prior art analysis.">
-    <meta property="og:title" content="Bull Generator - AI-Powered Patent Search Tool">
+    <title>Patent Search Generator - AI-Powered Patent Search Tool</title>
+    <meta name="description" content="Generate professional boolean search strings for patent databases instantly. AI-powered broad, moderate, and narrow strategies with concept mapping and prior art analysis. Free Chrome extension.">
+    <meta name="keywords" content="patent search, boolean search, prior art, patent analysis, Google Patents, Orbit, concept mapping, patent search tool">
+    <link rel="canonical" href="https://smythmyke.github.io/Bull-Generator/">
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="Patent Search Generator - AI-Powered Patent Search Tool">
     <meta property="og:description" content="Generate professional boolean search strings for patent databases instantly. 5 free searches daily.">
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://smythmyke.github.io/Bull-Generator/">
+    <meta property="og:image" content="https://smythmyke.github.io/Bull-Generator/images/og-image.png">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Patent Search Generator - AI-Powered Patent Search Tool">
+    <meta name="twitter:description" content="Generate professional boolean search strings for patent databases instantly. 5 free searches daily.">
+    <meta name="twitter:image" content="https://smythmyke.github.io/Bull-Generator/images/og-image.png">
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" sizes="32x32" href="./extension-src/icons/icon32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="./extension-src/icons/icon16.png">
+    <link rel="apple-touch-icon" href="./extension-src/icons/icon128.png">
+    <meta name="theme-color" content="#3B82F6">
+
+    <!-- Structured Data -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Patent Search Generator",
+        "description": "AI-powered Chrome extension for generating professional boolean patent search strings with concept mapping and prior art analysis.",
+        "url": "https://smythmyke.github.io/Bull-Generator/",
+        "applicationCategory": "BusinessApplication",
+        "operatingSystem": "Chrome",
+        "offers": {
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "USD",
+            "description": "5 free searches daily. Credit packs from $2.00."
+        },
+        "aggregateRating": {
+            "@type": "AggregateRating",
+            "ratingValue": "5",
+            "ratingCount": "1"
+        }
+    }
+    </script>
+
     <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://cdn.tailwindcss.com">
     <link rel="stylesheet" href="./css/styles.css">
     <script>
         function redirectToStore() {
-            window.location.href = 'https://chrome.google.com/webstore/detail/cidnfgnlheffodpoldolfgdlllipclgd';
+            window.location.href = 'https://chromewebstore.google.com/detail/lailglkmjkboieogmakjkcbihbldigno?utm_source=item-share-cb';
         }
     </script>
 </head>
 <body class="bg-white">
-    <header class="border-b">
+    <!-- Header -->
+    <header class="border-b border-gray-100 bg-white/80 backdrop-blur-sm sticky top-0 z-50">
         <nav class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex justify-between h-16 items-center">
                 <div class="flex items-center space-x-2">
-                    <img src="./images/small-bull-logo.png" alt="Bull Logo" class="logo-img"/>
-                    <span class="text-2xl font-bold text-gray-900">Bull Generator</span>
+                    <img src="./extension-src/icons/icon32.png" alt="Patent Search Generator" class="logo-img"/>
+                    <span class="text-xl font-bold gradient-text">Patent Search Generator</span>
                 </div>
-                <button onclick="redirectToStore()" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white primary-button">
-                    Get the Extension
+                <button onclick="redirectToStore()" class="inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg text-white primary-button">
+                    Add to Chrome &mdash; Free
                 </button>
             </div>
         </nav>
     </header>
 
-    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+    <main>
         <!-- Hero -->
-        <div class="lg:grid lg:grid-cols-12 lg:gap-8">
-            <div class="sm:text-center md:max-w-2xl md:mx-auto lg:col-span-6 lg:text-left">
-                <h1 class="text-4xl tracking-tight font-extrabold text-gray-900 sm:text-5xl md:text-6xl">
-                    <span class="block">AI-Powered</span>
-                    <span class="block text-red-600">Patent Searches</span>
-                </h1>
-                <p class="mt-3 text-base text-gray-500 sm:mt-5 sm:text-lg sm:max-w-xl sm:mx-auto md:mt-5 md:text-xl lg:mx-0">
-                    Generate professional boolean search strings instantly. Three search strategies, concept mapping, and prior art analysis — all from your browser side panel.
-                </p>
-                <div class="mt-8 sm:max-w-lg sm:mx-auto sm:text-center lg:text-left space-y-4">
-                    <button onclick="redirectToStore()" class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white primary-button">
-                        Install Free from Chrome Web Store
-                    </button>
-                    <p class="text-sm text-gray-500">
-                        5 free searches daily &middot; No credit card required
-                    </p>
-                </div>
-            </div>
-            <div class="mt-12 relative sm:max-w-lg sm:mx-auto lg:mt-0 lg:max-w-none lg:mx-0 lg:col-span-6 lg:flex lg:items-center">
-                <div class="pricing-card bg-white p-6 rounded-lg shadow-lg w-full">
-                    <div class="space-y-4">
-                        <div class="text-center border-b pb-4">
-                            <span class="font-medium text-gray-900 text-lg">Search Credit Packs</span>
-                            <p class="text-sm text-gray-500 mt-1">Pay as you go &mdash; no subscription</p>
+        <section class="hero-gradient py-16 sm:py-24">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="lg:grid lg:grid-cols-12 lg:gap-12 items-center">
+                    <div class="sm:text-center lg:col-span-6 lg:text-left animate-fade-in">
+                        <h1 class="text-4xl tracking-tight font-extrabold text-gray-900 sm:text-5xl md:text-6xl">
+                            <span class="block">AI-Powered</span>
+                            <span class="block gradient-text">Patent Searches</span>
+                        </h1>
+                        <p class="mt-4 text-lg text-gray-600 sm:mt-5 sm:text-xl sm:max-w-xl sm:mx-auto lg:mx-0 leading-relaxed">
+                            Generate professional boolean search strings instantly. Three search strategies, concept mapping, and prior art analysis &mdash; all from your browser side panel.
+                        </p>
+                        <div class="mt-8 sm:max-w-lg sm:mx-auto sm:text-center lg:text-left space-y-4">
+                            <button onclick="redirectToStore()" class="inline-flex items-center px-8 py-3.5 text-base font-semibold rounded-lg text-white primary-button">
+                                <svg class="w-5 h-5 mr-2" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+                                Install Free from Chrome Web Store
+                            </button>
+                            <p class="text-sm text-gray-500">
+                                5 free searches daily &middot; No credit card required
+                            </p>
                         </div>
-                        <div class="grid grid-cols-2 gap-3">
-                            <div class="border rounded-lg p-3 text-center">
-                                <div class="text-xl font-bold text-gray-900">10</div>
-                                <div class="text-xs text-gray-500">searches</div>
-                                <div class="text-sm font-semibold text-red-600 mt-1">$2.00</div>
-                                <div class="text-xs text-gray-400">$0.20/search</div>
-                            </div>
-                            <div class="border-2 border-blue-400 rounded-lg p-3 text-center relative">
-                                <span class="absolute -top-2 left-1/2 -translate-x-1/2 text-[9px] font-bold px-2 py-0.5 rounded-full bg-blue-500 text-white whitespace-nowrap">Most Popular</span>
-                                <div class="text-xl font-bold text-gray-900">25</div>
-                                <div class="text-xs text-gray-500">searches</div>
-                                <div class="text-sm font-semibold text-red-600 mt-1">$4.50</div>
-                                <div class="text-xs text-gray-400">$0.18/search</div>
-                            </div>
-                            <div class="border rounded-lg p-3 text-center">
-                                <div class="text-xl font-bold text-gray-900">50</div>
-                                <div class="text-xs text-gray-500">searches</div>
-                                <div class="text-sm font-semibold text-red-600 mt-1">$8.00</div>
-                                <div class="text-xs text-gray-400">$0.16/search</div>
-                            </div>
-                            <div class="border-2 border-amber-400 rounded-lg p-3 text-center relative">
-                                <span class="absolute -top-2 left-1/2 -translate-x-1/2 text-[9px] font-bold px-2 py-0.5 rounded-full bg-amber-500 text-white whitespace-nowrap">Best Value</span>
-                                <div class="text-xl font-bold text-gray-900">100</div>
-                                <div class="text-xs text-gray-500">searches</div>
-                                <div class="text-sm font-semibold text-red-600 mt-1">$15.00</div>
-                                <div class="text-xs text-gray-400">$0.15/search</div>
+                    </div>
+                    <div class="mt-12 lg:mt-0 lg:col-span-6 animate-fade-in animate-delay-2">
+                        <div class="pricing-card p-6 rounded-2xl shadow-xl w-full">
+                            <div class="space-y-4">
+                                <div class="text-center border-b border-gray-100 pb-4">
+                                    <span class="font-semibold text-gray-900 text-lg">Search Credit Packs</span>
+                                    <p class="text-sm text-gray-500 mt-1">Pay as you go &mdash; no subscription</p>
+                                </div>
+                                <div class="grid grid-cols-2 gap-3">
+                                    <div class="border border-gray-200 rounded-xl p-3 text-center hover:border-blue-300 transition-colors">
+                                        <div class="text-2xl font-bold text-gray-900">10</div>
+                                        <div class="text-xs text-gray-500">searches</div>
+                                        <div class="text-sm font-bold text-blue-600 mt-1">$2.00</div>
+                                        <div class="text-xs text-gray-400">$0.20/search</div>
+                                    </div>
+                                    <div class="border-2 border-blue-400 rounded-xl p-3 text-center relative bg-blue-50/50">
+                                        <span class="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 text-white whitespace-nowrap">Most Popular</span>
+                                        <div class="text-2xl font-bold text-gray-900">25</div>
+                                        <div class="text-xs text-gray-500">searches</div>
+                                        <div class="text-sm font-bold text-blue-600 mt-1">$4.50</div>
+                                        <div class="text-xs text-gray-400">$0.18/search</div>
+                                    </div>
+                                    <div class="border border-gray-200 rounded-xl p-3 text-center hover:border-blue-300 transition-colors">
+                                        <div class="text-2xl font-bold text-gray-900">50</div>
+                                        <div class="text-xs text-gray-500">searches</div>
+                                        <div class="text-sm font-bold text-blue-600 mt-1">$8.00</div>
+                                        <div class="text-xs text-gray-400">$0.16/search</div>
+                                    </div>
+                                    <div class="border-2 border-amber-400 rounded-xl p-3 text-center relative bg-amber-50/50">
+                                        <span class="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 text-white whitespace-nowrap">Best Value</span>
+                                        <div class="text-2xl font-bold text-gray-900">100</div>
+                                        <div class="text-xs text-gray-500">searches</div>
+                                        <div class="text-sm font-bold text-blue-600 mt-1">$15.00</div>
+                                        <div class="text-xs text-gray-400">$0.15/search</div>
+                                    </div>
+                                </div>
+                                <button onclick="redirectToStore()" class="w-full inline-flex justify-center items-center px-6 py-3 text-base font-semibold rounded-lg text-white primary-button">
+                                    Get Started Free
+                                </button>
                             </div>
                         </div>
-                        <button onclick="redirectToStore()" class="w-full inline-flex justify-center items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white primary-button">
-                            Get Started Free
-                        </button>
                     </div>
                 </div>
             </div>
-        </div>
+        </section>
 
         <!-- Features -->
-        <div class="mt-24 grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4">
-            <div class="strategy-card relative bg-white p-6 rounded-lg shadow-sm border">
-                <div class="text-lg leading-6 font-medium text-gray-900">Unified Search</div>
-                <p class="mt-2 text-base text-gray-500">Generate broad, moderate, and narrow boolean strings in one click. Supports Orbit/Quartet and Google Patents.</p>
+        <section class="py-20 bg-white">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="text-center mb-14">
+                    <h2 class="text-3xl font-bold text-gray-900 sm:text-4xl">Powerful Features</h2>
+                    <p class="mt-3 text-lg text-gray-500 max-w-2xl mx-auto">Everything you need for professional patent searching, powered by AI.</p>
+                </div>
+                <div class="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4">
+                    <div class="feature-card p-6 rounded-xl animate-fade-in animate-delay-1">
+                        <div class="icon-wrapper bg-blue-100">
+                            <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                        </div>
+                        <h3 class="text-lg font-semibold text-gray-900">Unified Search</h3>
+                        <p class="mt-2 text-sm text-gray-500 leading-relaxed">Generate broad, moderate, and narrow boolean strings in one click. Supports Orbit/Quartet and Google Patents.</p>
+                    </div>
+                    <div class="feature-card p-6 rounded-xl animate-fade-in animate-delay-2">
+                        <div class="icon-wrapper bg-purple-100">
+                            <svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/></svg>
+                        </div>
+                        <h3 class="text-lg font-semibold text-gray-900">Concept Mapper</h3>
+                        <p class="mt-2 text-sm text-gray-500 leading-relaxed">Extract technical concepts from paragraphs, edit synonyms, and generate targeted searches with AI assistance.</p>
+                    </div>
+                    <div class="feature-card p-6 rounded-xl animate-fade-in animate-delay-3">
+                        <div class="icon-wrapper bg-green-100">
+                            <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                        </div>
+                        <h3 class="text-lg font-semibold text-gray-900">Prior Art Analysis</h3>
+                        <p class="mt-2 text-sm text-gray-500 leading-relaxed">Analyze patents against Section 102/103 criteria with detailed element-by-element claim mapping.</p>
+                    </div>
+                    <div class="feature-card p-6 rounded-xl animate-fade-in animate-delay-4">
+                        <div class="icon-wrapper bg-amber-100">
+                            <svg class="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
+                        </div>
+                        <h3 class="text-lg font-semibold text-gray-900">Synonyms & Definitions</h3>
+                        <p class="mt-2 text-sm text-gray-500 leading-relaxed">Look up technical synonyms and definitions to expand your search vocabulary with patent-specific terms.</p>
+                    </div>
+                </div>
             </div>
-            <div class="strategy-card relative bg-white p-6 rounded-lg shadow-sm border">
-                <div class="text-lg leading-6 font-medium text-gray-900">Concept Mapper</div>
-                <p class="mt-2 text-base text-gray-500">Extract technical concepts from paragraphs, edit synonyms, and generate targeted searches with AI assistance.</p>
-            </div>
-            <div class="strategy-card relative bg-white p-6 rounded-lg shadow-sm border">
-                <div class="text-lg leading-6 font-medium text-gray-900">Prior Art Analysis</div>
-                <p class="mt-2 text-base text-gray-500">Analyze patents against Section 102/103 criteria with detailed element-by-element claim mapping.</p>
-            </div>
-            <div class="strategy-card relative bg-white p-6 rounded-lg shadow-sm border">
-                <div class="text-lg leading-6 font-medium text-gray-900">Synonyms & Definitions</div>
-                <p class="mt-2 text-base text-gray-500">Look up technical synonyms and definitions to expand your search vocabulary with patent-specific terms.</p>
-            </div>
-        </div>
+        </section>
 
         <!-- How It Works -->
-        <div class="mt-16 border-t pt-8">
-            <h2 class="text-3xl font-bold text-center text-gray-900 mb-8">How It Works</h2>
-            <div class="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4">
-                <div class="step-card text-center">
-                    <div class="text-xl font-medium mb-2">1. Install Extension</div>
-                    <p class="text-gray-500">Add to Chrome from the Web Store</p>
+        <section class="py-20" style="background: linear-gradient(to bottom, #F8FAFC, white);">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="text-center mb-14">
+                    <h2 class="text-3xl font-bold text-gray-900 sm:text-4xl">How It Works</h2>
+                    <p class="mt-3 text-lg text-gray-500">Get started in under a minute.</p>
                 </div>
-                <div class="step-card text-center">
-                    <div class="text-xl font-medium mb-2">2. Enter Keywords</div>
-                    <p class="text-gray-500">Type your search terms or paste a paragraph</p>
-                </div>
-                <div class="step-card text-center">
-                    <div class="text-xl font-medium mb-2">3. Generate Searches</div>
-                    <p class="text-gray-500">Get broad, moderate, and narrow strategies</p>
-                </div>
-                <div class="step-card text-center">
-                    <div class="text-xl font-medium mb-2">4. Search Patents</div>
-                    <p class="text-gray-500">Launch directly into Google Patents</p>
+                <div class="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4">
+                    <div class="step-card text-center">
+                        <div class="step-number">1</div>
+                        <h3 class="text-lg font-semibold mb-1">Install Extension</h3>
+                        <p class="text-gray-500 text-sm">Add to Chrome from the Web Store</p>
+                    </div>
+                    <div class="step-card text-center">
+                        <div class="step-number">2</div>
+                        <h3 class="text-lg font-semibold mb-1">Enter Keywords</h3>
+                        <p class="text-gray-500 text-sm">Type search terms or paste a paragraph</p>
+                    </div>
+                    <div class="step-card text-center">
+                        <div class="step-number">3</div>
+                        <h3 class="text-lg font-semibold mb-1">Generate Searches</h3>
+                        <p class="text-gray-500 text-sm">Get broad, moderate, and narrow strategies</p>
+                    </div>
+                    <div class="step-card text-center">
+                        <div class="step-number">4</div>
+                        <h3 class="text-lg font-semibold mb-1">Search Patents</h3>
+                        <p class="text-gray-500 text-sm">Launch directly into Google Patents</p>
+                    </div>
                 </div>
             </div>
-        </div>
+        </section>
+
+        <!-- CTA -->
+        <section class="py-16">
+            <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+                <div class="rounded-2xl p-10 hero-gradient border border-blue-100">
+                    <h2 class="text-3xl font-bold text-gray-900 mb-4">Start Searching Smarter</h2>
+                    <p class="text-lg text-gray-600 mb-8 max-w-xl mx-auto">Join patent professionals using AI to find prior art faster. 5 free searches every day.</p>
+                    <button onclick="redirectToStore()" class="inline-flex items-center px-8 py-3.5 text-base font-semibold rounded-lg text-white primary-button">
+                        Install Patent Search Generator
+                    </button>
+                </div>
+            </div>
+        </section>
     </main>
 
-    <footer class="bg-gray-50 mt-24">
-        <div class="max-w-7xl mx-auto py-12 px-4 sm:px-6 md:flex md:items-center md:justify-between lg:px-8">
+    <!-- Footer -->
+    <footer class="bg-gray-50 border-t border-gray-100">
+        <div class="max-w-7xl mx-auto py-8 px-4 sm:px-6 md:flex md:items-center md:justify-between lg:px-8">
             <div class="flex justify-center space-x-6 md:order-2">
-                <a href="./patent-search-privacy-policy.html" class="text-gray-400 hover:text-gray-500">Privacy Policy</a>
+                <a href="./patent-search-privacy-policy.html" class="text-gray-400 hover:text-gray-500 text-sm">Privacy Policy</a>
             </div>
-            <div class="mt-8 md:mt-0 md:order-1">
-                <p class="text-center text-base text-gray-400">
-                    &copy; 2026 Bull Generator. All rights reserved.
+            <div class="mt-4 md:mt-0 md:order-1">
+                <p class="text-center text-sm text-gray-400">
+                    &copy; 2026 Patent Search Generator. All rights reserved.
                 </p>
             </div>
         </div>
