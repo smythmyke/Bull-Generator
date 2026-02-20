@@ -122,6 +122,30 @@ body {
     margin: 0 auto 0.75rem;
 }
 
+/* Showcase tabs */
+.showcase-tab {
+    background: white;
+    color: #64748B;
+    border: 1px solid #E2E8F0;
+}
+
+.showcase-tab:hover {
+    border-color: var(--primary-blue);
+    color: var(--primary-blue);
+}
+
+.showcase-tab.active {
+    background: linear-gradient(135deg, var(--primary-blue), var(--primary-purple));
+    color: white;
+    border-color: transparent;
+    box-shadow: 0 4px 14px 0 rgba(59, 130, 246, 0.3);
+}
+
+.showcase-panel img {
+    max-width: 100%;
+    height: auto;
+}
+
 /* Responsive adjustments */
 @media (max-width: 640px) {
     h1 {
