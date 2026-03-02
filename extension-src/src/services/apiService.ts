@@ -126,6 +126,9 @@ export interface PatentForRanking {
   cpcCodes: string[];
   firstClaim: string;
   foundBy?: string[];
+  // BigQuery enrichment fields (optional)
+  independentClaims?: { claimNumber: number; text: string }[];
+  backwardCitationCount?: number;
 }
 
 export interface Snippet {
@@ -138,6 +141,7 @@ export interface RankedPatent {
   patentId: string;
   rank: number;
   score: number;
+  semanticScore?: number;
   reasoning: string;
   snippets: Snippet[];
 }
@@ -176,6 +180,31 @@ export interface EnrichNPLResponse {
 
 export async function enrichNPL(items: NPLItem[]): Promise<EnrichNPLResponse> {
   return callAI<EnrichNPLResponse>("/enrich-npl", { items });
+}
+
+// Strategy search types
+export type SearchStrategy = 'telescoping' | 'onion-ring' | 'faceted';
+export type SearchDepth = 'quick' | 'pro-auto' | 'pro-interactive';
+
+export interface StrategySearchQuery {
+  label: string;
+  query: string;
+}
+
+export interface GenerateStrategySearchesRequest {
+  concepts: GenerateFromConceptsRequest[];
+  strategy: SearchStrategy;
+  maxGroups?: number;
+}
+
+export interface GenerateStrategySearchesResponse {
+  queries: StrategySearchQuery[];
+}
+
+export async function generateStrategySearches(
+  request: GenerateStrategySearchesRequest
+): Promise<GenerateStrategySearchesResponse> {
+  return callAI<GenerateStrategySearchesResponse>("/generate-strategy-searches", request as unknown as Record<string, unknown>);
 }
 
 // Pro Search types
@@ -287,6 +316,9 @@ export interface PriorArtAnalysisRequest {
     fullAbstract?: string;
     cpcCodes?: string[];
     firstClaim?: string;
+    independentClaims?: { claimNumber: number; text: string }[];
+    backwardCitationCount?: number;
+    familyId?: string;
   }[];
 }
 
@@ -294,4 +326,116 @@ export async function analyzePriorArt(
   request: PriorArtAnalysisRequest
 ): Promise<PriorArtAnalysisResponse> {
   return callAI<PriorArtAnalysisResponse>("/analyze-prior-art", request as unknown as Record<string, unknown>);
+}
+
+// Full Report Sections types
+export interface ReportFeature {
+  id: string;
+  name: string;
+  importance: 'high' | 'medium' | 'low';
+  description: string;
+}
+
+export interface ClaimChartElement {
+  featureId: string;
+  featureName: string;
+  priorArtDisclosure: string;
+  sourceRef: string;
+  coverage: 'full' | 'partial' | 'none';
+  coverageExplanation: string;
+}
+
+export interface ClaimChart {
+  patentId: string;
+  epoCategory: 'X' | 'Y';
+  narrativeIntro: string;
+  elements: ClaimChartElement[];
+}
+
+export interface ReportConclusion {
+  noveltyAssessment: string;
+  obviousnessAssessment: string;
+  overallRisk: 'low' | 'moderate' | 'high';
+  recommendations: string[];
+}
+
+export interface GenerateReportSectionsRequest {
+  query: string;
+  concepts: { name: string; category?: string; synonyms: string[]; importance?: string }[];
+  topPatents: {
+    patentId: string;
+    title: string;
+    abstract?: string;
+    claims?: string;
+    cpcCodes?: string[];
+    assignee?: string;
+  }[];
+  priorArtSummary: {
+    section102Count: number;
+    section103Count: number;
+    maxCombinedCoverage: number;
+    coverageGaps: string[];
+  };
+  epoCategories: { patentId: string; category: 'X' | 'Y' | 'A' }[];
+}
+
+export interface GenerateReportSectionsResponse {
+  inventionSummary: {
+    narrative: string;
+    features: ReportFeature[];
+  };
+  claimCharts: ClaimChart[];
+  conclusion: ReportConclusion;
+}
+
+export async function generateReportSections(
+  request: GenerateReportSectionsRequest
+): Promise<GenerateReportSectionsResponse> {
+  return callAI<GenerateReportSectionsResponse>("/generate-report-sections", request as unknown as Record<string, unknown>);
+}
+
+// BigQuery enrichment types
+export interface ParsedIndependentClaim {
+  claimNumber: number;
+  text: string;
+}
+
+export interface CitationInfo {
+  citedPublicationNumber: string;
+  citationType: string;
+  phase: string;
+}
+
+export interface CPCDetail {
+  code: string;
+  inventive: boolean;
+  first: boolean;
+}
+
+export interface EnrichedPatentBQ {
+  publicationNumber: string;
+  originalId: string;
+  independentClaims: ParsedIndependentClaim[];
+  totalClaimCount: number;
+  descriptionSnippet: string;
+  backwardCitations: CitationInfo[];
+  backwardCitationCount: number;
+  cpcDetails: CPCDetail[];
+  familyId: string;
+  priorityDate: string;
+  filingDate: string;
+  grantDate: string;
+  entityStatus: string;
+  enrichedVia: "bigquery";
+}
+
+export interface EnrichBigQueryResponse {
+  enriched: EnrichedPatentBQ[];
+  errors: string[];
+}
+
+export async function enrichBigQuery(
+  publicationNumbers: string[]
+): Promise<EnrichBigQueryResponse> {
+  return callAI<EnrichBigQueryResponse>("/enrich-bigquery", { publicationNumbers });
 }

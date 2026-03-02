@@ -9,6 +9,7 @@ import {
 } from '../services/apiService';
 import { useCreditGate } from '../hooks/useCreditGate';
 import InsufficientCreditsModal from '../components/InsufficientCreditsModal';
+import { exportExaminerReportPDF, exportExaminerReportDOCX, ExaminerReportData } from '../utils/exportReport';
 
 interface PatentForAnalysis {
   patentId: string;
@@ -18,12 +19,40 @@ interface PatentForAnalysis {
   fullAbstract: string;
   cpcCodes: string[];
   firstClaim: string;
+  // BigQuery enrichment fields
+  independentClaims?: { claimNumber: number; text: string }[];
+  backwardCitationCount?: number;
+  familyId?: string;
+}
+
+// Cached report state — lifted to parent so it survives tab switches
+export interface PriorArtReportState {
+  status: AnalysisStatus;
+  error: string;
+  result: PriorArtAnalysisResponse | null;
+  usedConcepts: { name: string; synonyms: string[] }[];
+}
+
+export const INITIAL_REPORT_STATE: PriorArtReportState = {
+  status: 'idle',
+  error: '',
+  result: null,
+  usedConcepts: [],
+};
+
+export interface RichConcept {
+  name: string;
+  synonyms: string[];
+  importance?: string;
+  category?: string;
 }
 
 interface PriorArtAnalysisProps {
   query: string;
-  concepts: { name: string; synonyms: string[] }[] | undefined;
+  concepts: RichConcept[] | undefined;
   patents: PatentForAnalysis[];
+  reportState: PriorArtReportState;
+  onReportStateChange: (state: PriorArtReportState) => void;
 }
 
 type AnalysisStatus = 'idle' | 'extracting-concepts' | 'analyzing' | 'done' | 'error';
@@ -45,13 +74,15 @@ function getShortPatentId(patentId: string): string {
   return patentId;
 }
 
-const PriorArtAnalysis: React.FC<PriorArtAnalysisProps> = ({ query, concepts: propConcepts, patents }) => {
-  const [status, setStatus] = useState<AnalysisStatus>('idle');
-  const [error, setError] = useState('');
-  const [result, setResult] = useState<PriorArtAnalysisResponse | null>(null);
-  const [usedConcepts, setUsedConcepts] = useState<{ name: string; synonyms: string[] }[]>([]);
+const PriorArtAnalysis: React.FC<PriorArtAnalysisProps> = ({ query, concepts: propConcepts, patents, reportState, onReportStateChange }) => {
+  const { status, error, result, usedConcepts } = reportState;
   const [hoveredCell, setHoveredCell] = useState<{ patentId: string; concept: string } | null>(null);
   const { checkingAction, showPurchasePrompt, canSearch, withCreditCheck, dismissPurchasePrompt } = useCreditGate();
+
+  // Helper to update lifted state
+  const updateState = (partial: Partial<PriorArtReportState>) => {
+    onReportStateChange({ ...reportState, ...partial });
+  };
 
   const runAnalysis = async () => {
     await withCreditCheck('examiner-report', 1, async () => {
@@ -60,14 +91,13 @@ const PriorArtAnalysis: React.FC<PriorArtAnalysisProps> = ({ query, concepts: pr
   };
 
   const doRunAnalysis = async () => {
-    setError('');
-    setResult(null);
+    updateState({ error: '', result: null });
 
     let concepts = propConcepts;
 
     // Fallback: extract concepts if none stored (backward compatibility)
     if (!concepts || concepts.length === 0) {
-      setStatus('extracting-concepts');
+      updateState({ status: 'extracting-concepts' });
       try {
         const extracted = await extractConcepts(query);
         concepts = (extracted.concepts || []).map(c => ({
@@ -75,20 +105,17 @@ const PriorArtAnalysis: React.FC<PriorArtAnalysisProps> = ({ query, concepts: pr
           synonyms: c.synonyms,
         }));
       } catch (err) {
-        setStatus('error');
-        setError(err instanceof Error ? err.message : 'Failed to extract concepts');
+        updateState({ status: 'error', error: err instanceof Error ? err.message : 'Failed to extract concepts' });
         return;
       }
     }
 
     if (!concepts || concepts.length === 0) {
-      setStatus('error');
-      setError('No concepts available for analysis.');
+      updateState({ status: 'error', error: 'No concepts available for analysis.' });
       return;
     }
 
-    setUsedConcepts(concepts);
-    setStatus('analyzing');
+    updateState({ usedConcepts: concepts, status: 'analyzing' });
 
     try {
       const top12 = patents.slice(0, 12).map(p => ({
@@ -98,6 +125,14 @@ const PriorArtAnalysis: React.FC<PriorArtAnalysisProps> = ({ query, concepts: pr
         fullAbstract: p.fullAbstract,
         cpcCodes: p.cpcCodes,
         firstClaim: p.firstClaim,
+        ...(p.independentClaims && p.independentClaims.length > 0 ? {
+          independentClaims: p.independentClaims.slice(0, 2).map(c => ({
+            claimNumber: c.claimNumber,
+            text: c.text.substring(0, 500),
+          })),
+        } : {}),
+        ...(p.backwardCitationCount !== undefined ? { backwardCitationCount: p.backwardCitationCount } : {}),
+        ...(p.familyId ? { familyId: p.familyId } : {}),
       }));
 
       const response = await analyzePriorArt({
@@ -106,11 +141,9 @@ const PriorArtAnalysis: React.FC<PriorArtAnalysisProps> = ({ query, concepts: pr
         patents: top12,
       });
 
-      setResult(response);
-      setStatus('done');
+      updateState({ result: response, status: 'done' });
     } catch (err) {
-      setStatus('error');
-      setError(err instanceof Error ? err.message : 'Prior art analysis failed');
+      updateState({ status: 'error', error: err instanceof Error ? err.message : 'Prior art analysis failed' });
     }
   };
 
@@ -194,13 +227,64 @@ const PriorArtAnalysis: React.FC<PriorArtAnalysisProps> = ({ query, concepts: pr
     );
   }
 
+  const buildExaminerReportData = (): ExaminerReportData | null => {
+    if (!result) return null;
+    const patentTitles: Record<string, string> = {};
+    for (const p of patents) {
+      patentTitles[p.patentId] = p.title;
+    }
+    return {
+      query,
+      date: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+      concepts: usedConcepts,
+      conceptCoverage: result.conceptCoverage,
+      section102: result.section102.map(c => ({
+        ...c,
+        title: patentTitles[c.patentId],
+      })),
+      section103: result.section103,
+      patentTitles,
+    };
+  };
+
   if (!result) return null;
 
   const conceptNames = usedConcepts.map(c => c.name);
   const has102 = result.section102.length > 0;
 
+  // Sort coverage rows by correlation count (full=2, partial=1, none=0) — most correlated first
+  const sortedCoverage = [...result.conceptCoverage].sort((a, b) => {
+    const scoreOf = (cov: PatentConceptCoverage) =>
+      cov.conceptsCovered.reduce((sum, c) => sum + (c.coverage === 'full' ? 2 : c.coverage === 'partial' ? 1 : 0), 0);
+    return scoreOf(b) - scoreOf(a);
+  });
+
   return (
     <div className="max-w-5xl mx-auto px-6 py-6 space-y-6">
+      {/* Export buttons */}
+      <div className="flex items-center justify-end gap-2">
+        <button
+          onClick={() => {
+            const data = buildExaminerReportData();
+            if (data) exportExaminerReportPDF(data);
+          }}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-red-50 text-red-700 border border-red-200 rounded-md hover:bg-red-100 transition-colors"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/><line x1="10" x2="8" y1="9" y2="9"/></svg>
+          Export PDF
+        </button>
+        <button
+          onClick={async () => {
+            const data = buildExaminerReportData();
+            if (data) await exportExaminerReportDOCX(data);
+          }}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded-md hover:bg-blue-100 transition-colors"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+          Export DOCX
+        </button>
+      </div>
+
       {/* Concept Coverage Matrix */}
       <section className="border rounded-lg overflow-hidden">
         <div className="px-4 py-3 border-b bg-slate-50">
@@ -222,7 +306,7 @@ const PriorArtAnalysis: React.FC<PriorArtAnalysisProps> = ({ query, concepts: pr
               </tr>
             </thead>
             <tbody>
-              {result.conceptCoverage.map((patentCov: PatentConceptCoverage) => (
+              {sortedCoverage.map((patentCov: PatentConceptCoverage) => (
                 <tr key={patentCov.patentId} className="border-b hover:bg-slate-50/30">
                   <td className="px-3 py-2">
                     <span className="font-mono font-medium" title={getPatentTitle(patentCov.patentId)}>

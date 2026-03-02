@@ -18,6 +18,15 @@ html.txt
 html1.txt
 html2.txt
 
+# Firebase local cache
+.firebase/
+
+# Release zips
+*.zip
+
+# Sample output
+sample-report.html
+
 # OS files
 .DS_Store
 Thumbs.db

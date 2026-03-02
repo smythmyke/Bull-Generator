@@ -1,4 +1,5 @@
 import {GoogleGenerativeAI} from "@google/generative-ai";
+import {enrichFromBigQuery} from "./bigquery";
 
 // Get API key from environment (.env file deployed with functions)
 function getApiKey(): string {
@@ -68,7 +69,7 @@ Follow these exact rules when generating search strings:
    Example: TAC=((burst* OR break* OR split*) 2D (head* OR tip* OR tool*))
 
 3. GOOGLE PATENTS FORMAT (when searchSystem is "google-patents"):
-   - Do NOT use truncation wildcards (no *)
+   - Use truncation wildcards (e.g., scan*, measur*) for word variations — Google Patents supports them
    - Use full words and quoted phrases for multi-word fixed terms (e.g., "lithium ion")
    - Use AND/OR operators
    - Proximity operators (NEAR/x, ADJ/x, WITH, SAME) are available for MODERATE and NARROW. These affect result ranking (boosting patents where terms appear close together) but do not filter results out.
@@ -433,6 +434,9 @@ interface PatentForRanking {
   // NPL-specific fields (optional)
   citationCount?: number;
   venue?: string;
+  // BigQuery enrichment fields (optional)
+  independentClaims?: { claimNumber: number; text: string }[];
+  backwardCitationCount?: number;
 }
 
 interface Snippet {
@@ -449,11 +453,17 @@ interface RankedPatent {
   snippets: Snippet[];
 }
 
-const RANK_PROMPT = `You are a patent relevance expert. Given a search query and a list of patents, rank them by relevance to the query.
+const RANK_PROMPT = `You are a patent relevance expert. Given a search query and a list of patents, provide a SEMANTIC relevance score for each.
+
+Your score should reflect ONLY semantic/conceptual alignment — do NOT factor in multi-source signals or metadata. The client will combine your semantic score with other deterministic signals.
 
 For each patent, provide:
-- "score": 1-100 (100 = perfectly relevant)
-- "reasoning": 1 sentence explaining the overall relevance
+- "semanticScore": 1-100 (100 = perfectly relevant) based ONLY on:
+  * Conceptual alignment with the search query
+  * Technical equivalence (same inventive concept even if different terminology)
+  * Scope matching (how well the patent's scope overlaps the query's intent)
+  * Synonym/related-concept recognition
+- "reasoning": 1 sentence explaining the semantic relevance
 - "snippets": 1-2 direct quotes from the patent's abstract or claims that prove relevance. Each snippet must have:
   - "source": either "abstract" or "claim" (where the quote comes from)
   - "quote": the EXACT text copied from the patent (10-40 words, must be a real substring from the provided text)
@@ -465,7 +475,7 @@ Return JSON matching this schema exactly:
     {
       "patentId": "string",
       "rank": 1,
-      "score": 95,
+      "semanticScore": 95,
       "reasoning": "string",
       "snippets": [
         {
@@ -483,8 +493,7 @@ Ranking criteria (in order of importance):
 2. Claims cover the query's technical scope (patents) or content directly addresses the topic (NPL)
 3. CPC codes align with the technology domain (patents only)
 4. Specificity - results focused on the exact topic rank higher than broad/tangential ones
-5. Multi-source signal - results found by multiple independent searches are more likely relevant (noted as "Found by: ..." in the listing). Give a moderate boost (+5-10 points) to results found by 2+ searches.
-6. For non-patent literature (NPL): citation count is a strong relevance signal. Papers with 50+ citations are well-established in the field. Papers with 200+ citations are seminal works. Include citation count in your reasoning if notable.
+5. For non-patent literature (NPL): citation count is a strong relevance signal. Papers with 50+ citations are well-established in the field. Papers with 200+ citations are seminal works. Include citation count in your reasoning if notable.
 
 IMPORTANT for snippets:
 - Quotes MUST be real substrings from the Abstract or Claim 1 text provided (or from the NPL snippet/abstract)
@@ -496,20 +505,10 @@ The list may include both patents AND non-patent literature (NPL). NPL items are
 
 Return ALL results ranked from most to least relevant. Return ONLY valid JSON, no markdown.`;
 
-async function rankPatents(
-  body: { query: string; patents: PatentForRanking[] }
-): Promise<object> {
-  const {query, patents} = body;
+const RANK_BATCH_SIZE = 20;
 
-  if (!query || typeof query !== "string") {
-    throw new Error("query string is required");
-  }
-  if (!patents || !Array.isArray(patents) || patents.length === 0) {
-    throw new Error("patents array is required");
-  }
-
-  // Build a compact representation for the prompt
-  const patentSummaries = patents.map((p, i) => {
+function buildPatentSummaries(patents: PatentForRanking[]): string {
+  return patents.map((p, i) => {
     const isNPL = p.patentId?.startsWith("scholar/") ||
       p.patentId?.startsWith("scholar-") ||
       p.citationCount !== undefined;
@@ -530,17 +529,29 @@ async function rankPatents(
       parts.push(`Assignee: ${p.assignee || "Unknown"}`);
     }
 
-    if (p.foundBy && p.foundBy.length > 0) {
-      parts.push(`Found by: ${p.foundBy.join(", ")} (${p.foundBy.length} searches)`);
-    }
     const abs = p.fullAbstract || p.abstract || "";
     if (abs) parts.push(`Abstract: ${abs.substring(0, 500)}`);
     if (p.cpcCodes?.length > 0) parts.push(`CPC: ${p.cpcCodes.join(", ")}`);
-    if (p.firstClaim) {
-      parts.push(`Claim 1: ${p.firstClaim.substring(0, 400)}`);
+    if (p.backwardCitationCount !== undefined) {
+      parts.push(`Backward citations: ${p.backwardCitationCount}`);
+    }
+    if (p.independentClaims && p.independentClaims.length > 0) {
+      const claimsToSend = p.independentClaims.slice(0, 2);
+      claimsToSend.forEach((c) => {
+        parts.push(`Claim ${c.claimNumber}: ${c.text.substring(0, 300)}`);
+      });
+    } else if (p.firstClaim) {
+      parts.push(`Claim 1: ${p.firstClaim.substring(0, 300)}`);
     }
     return parts.join("\n");
   }).join("\n\n");
+}
+
+async function rankBatch(
+  query: string,
+  patents: PatentForRanking[]
+): Promise<RankedPatent[]> {
+  const patentSummaries = buildPatentSummaries(patents);
 
   const model = getModel();
   const result = await model.generateContent({
@@ -558,7 +569,7 @@ ${patentSummaries}`,
     }],
     generationConfig: {
       temperature: 0.1,
-      maxOutputTokens: 8000,
+      maxOutputTokens: 40000,
       responseMimeType: "application/json",
     },
   });
@@ -570,12 +581,52 @@ ${patentSummaries}`,
 
   const parsed = JSON.parse(content) as { ranked: RankedPatent[] };
 
-  // Ensure ranks are sequential
-  parsed.ranked.forEach((item: RankedPatent, idx: number) => {
-    item.rank = idx + 1;
+  // Normalize score field
+  parsed.ranked.forEach((item: RankedPatent) => {
+    const anyItem = item as any;
+    item.score = anyItem.semanticScore || anyItem.score || 0;
   });
 
-  return parsed;
+  return parsed.ranked;
+}
+
+async function rankPatents(
+  body: { query: string; patents: PatentForRanking[] }
+): Promise<object> {
+  const {query, patents} = body;
+
+  if (!query || typeof query !== "string") {
+    throw new Error("query string is required");
+  }
+  if (!patents || !Array.isArray(patents) || patents.length === 0) {
+    throw new Error("patents array is required");
+  }
+
+  // Small enough to rank in one shot
+  if (patents.length <= RANK_BATCH_SIZE) {
+    const ranked = await rankBatch(query, patents);
+    ranked.forEach((item, idx) => { item.rank = idx + 1; });
+    return { ranked };
+  }
+
+  // Split into batches and rank in parallel
+  const batches: PatentForRanking[][] = [];
+  for (let i = 0; i < patents.length; i += RANK_BATCH_SIZE) {
+    batches.push(patents.slice(i, i + RANK_BATCH_SIZE));
+  }
+
+  console.log(`[rank] Batching ${patents.length} patents into ${batches.length} batches of up to ${RANK_BATCH_SIZE}`);
+
+  const batchResults = await Promise.all(
+    batches.map((batch) => rankBatch(query, batch))
+  );
+
+  // Merge all batch results and re-sort by score
+  const allRanked = batchResults.flat();
+  allRanked.sort((a, b) => b.score - a.score);
+  allRanked.forEach((item, idx) => { item.rank = idx + 1; });
+
+  return { ranked: allRanked };
 }
 
 // ── Enrich NPL via Semantic Scholar + CrossRef ──
@@ -886,17 +937,23 @@ Return JSON matching this schema exactly:
   "narrow": "the narrow search string"
 }
 
+CRITICAL: Patent searches that AND together more than 3 concept groups almost always return 0 results. Keep group counts LOW.
+
 RULES:
 
 BROAD:
+- Use AT MOST 2 concept groups. Pick the 2 highest-importance concepts.
 - Include the concept name and ALL provided synonyms in each group
-- Use OR between terms within a group, AND between all groups
+- Use truncation wildcards (e.g., scan*, measur*, detect*) for word variations
+- Use OR between terms within a group, AND between groups
 - Quote multi-word phrases
 - No proximity operators, no field prefixes
-Example: ("flotation device" OR "buoyancy vest" OR "life vest" OR PFD) AND ("water activated" OR "moisture triggered" OR "automatic inflation")
+Example: (scan* OR measur* OR "non-contact" OR detect* OR sens*) AND (dimension* OR geometr* OR "surface profile" OR topograph*)
 
 MODERATE:
+- Use AT MOST 3 concept groups. Pick the 2-3 highest-importance concepts.
 - Include the concept name and 3-5 best synonyms per group
+- Use truncation wildcards (e.g., scan*, measur*) for word variations
 - Choose the connector between EACH pair of concept groups based on their semantic relationship:
   * Compound phrases where word order matters (e.g., "wireless" + "charging") → ADJ/5
   * Closely related concepts where order is flexible (e.g., "corrosion" + "resistance") → NEAR/10
@@ -904,23 +961,27 @@ MODERATE:
   * Independent concepts from different domains (e.g., "vehicle" + "user interface") → AND
 - Do NOT use field prefixes in moderate
 - Proximity operators affect ranking (boosting relevant results higher), not filtering
-Example: ("flotation device" OR "buoyancy vest" OR "life preserver") NEAR/10 ("water activated" OR "moisture triggered" OR "auto-inflating") AND ("pet" OR "canine" OR "domestic animal")
+- For multi-word concepts (3+ words), decompose into proximity pairs rather than exact phrases. E.g., "non contact scanning" → (non-contact OR noncontact OR contactless) NEAR/5 scan*
+Example: (scan* OR measur* OR detect*) NEAR/10 (dimension* OR geometr* OR topograph*) AND (laser* OR optic* OR "structured light")
 
 NARROW:
+- Use AT MOST 2 concept groups. Pick the 2 highest-importance concepts.
 - Include the concept name and 2-3 best synonyms per group
+- Use truncation wildcards
 - Use tighter proximity than moderate:
   * Compound phrases where word order matters → ADJ/3
   * Closely related concepts → NEAR/5
   * Related concepts in same discussion → NEAR/10 or WITH
   * Independent concepts → AND
-- Only include HIGH importance concepts (skip low importance concepts entirely)
 - Optionally wrap the single most important inventive concept group in CL=() to boost claim matches. Only do this for the core novelty, never for contextual or supporting terms.
-Example: CL=("flotation device" OR "buoyancy vest") ADJ/3 ("water activated" OR "auto-inflating") NEAR/5 ("pet" OR "canine")
+Example: CL=(scan* OR measur*) ADJ/3 (dimension* OR geometr*) NEAR/5 (laser* OR optic*)
 
 KEY POINTS:
 - Quote multi-word phrases (e.g., "drill bit", "lithium ion")
 - Single words do not need quotes
+- Use truncation wildcards (word*) for single-word terms with 3+ characters to capture variations
 - Keep each concept's terms in separate parenthesized groups with OR
+- NEVER exceed 3 AND groups — fewer groups = more results = better recall
 - Proximity operators (NEAR/x, ADJ/x, WITH, SAME) only affect ranking, not filtering — they boost patents where terms appear close together
 - The relationship between concept pairs determines the operator — analyze each pair independently
 - Return ONLY valid JSON, no markdown.`;
@@ -1124,6 +1185,9 @@ Rules:
 - For section103, prefer combinations with the fewest references that cover the most concepts
 - Limit to the top 3 most threatening 103 combinations
 - Be conservative: don't overstate coverage. When in doubt, rate as "partial" rather than "full"
+- When multiple independent claims are provided, analyze claim language specifically — claims define the legal scope of the patent
+- When a reference has a high backward citation count (20+), note this as a strong prior art indicator in your reasoning
+- When multiple references share the same patent family ID, flag this — they represent the same invention in different jurisdictions and should not be combined in a 103 analysis
 - Return ONLY valid JSON, no markdown.`;
 
 interface PriorArtPatentInput {
@@ -1133,6 +1197,9 @@ interface PriorArtPatentInput {
   fullAbstract?: string;
   cpcCodes?: string[];
   firstClaim?: string;
+  independentClaims?: { claimNumber: number; text: string }[];
+  backwardCitationCount?: number;
+  familyId?: string;
 }
 
 interface AnalyzePriorArtBody {
@@ -1165,8 +1232,19 @@ async function analyzePriorArt(body: AnalyzePriorArtBody): Promise<object> {
     if (p.cpcCodes && p.cpcCodes.length > 0) {
       parts.push(`CPC: ${p.cpcCodes.join(", ")}`);
     }
-    if (p.firstClaim) {
+    // Use independent claims if available, otherwise fall back to firstClaim
+    if (p.independentClaims && p.independentClaims.length > 0) {
+      for (const claim of p.independentClaims.slice(0, 2)) {
+        parts.push(`Claim ${claim.claimNumber}: ${claim.text.substring(0, 500)}`);
+      }
+    } else if (p.firstClaim) {
       parts.push(`Claim 1: ${p.firstClaim.substring(0, 500)}`);
+    }
+    if (p.backwardCitationCount !== undefined && p.backwardCitationCount > 0) {
+      parts.push(`Backward citations: ${p.backwardCitationCount} (${p.backwardCitationCount >= 30 ? "heavily cited" : p.backwardCitationCount >= 10 ? "well-cited" : "lightly cited"})`);
+    }
+    if (p.familyId) {
+      parts.push(`Patent family: ${p.familyId}`);
     }
     return parts.join("\n");
   }).join("\n\n");
@@ -1218,6 +1296,295 @@ ${patentSummaries}`,
   return parsed;
 }
 
+// ── Strategy-based Search Generation ──
+
+type SearchStrategy = 'telescoping' | 'onion-ring' | 'faceted';
+
+interface StrategyConceptInput {
+  name: string;
+  synonyms: string[];
+  category: string;
+  importance: string;
+  enabled: boolean;
+}
+
+interface GenerateStrategyBody {
+  concepts: StrategyConceptInput[];
+  strategy: SearchStrategy;
+  maxGroups?: number;
+}
+
+const STRATEGY_SEARCH_PROMPT = `You are a patent search expert for Google Patents. Given structured technical concepts and a search STRATEGY, generate search queries.
+
+CRITICAL RULES (apply to ALL strategies):
+- Use truncation wildcards (e.g., scan*, measur*, detect*) for single-word terms with 3+ characters
+- Quote multi-word phrases (e.g., "drill bit", "lithium ion")
+- Keep each concept's terms in separate parenthesized groups with OR
+- For multi-word concepts (3+ words), decompose into proximity pairs rather than exact phrases
+- Proximity operators (NEAR/x, ADJ/x, WITH, SAME) boost ranking, they do NOT filter results out
+- CL=() wraps a group to boost patents where it appears in claims — use sparingly for core novelty only
+- Do NOT include brand names
+- Return ONLY valid JSON, no markdown
+
+Return JSON matching this schema:
+{
+  "queries": [
+    { "label": "descriptive label", "query": "the search string" }
+  ]
+}
+
+STRATEGIES:
+
+TELESCOPING — Return exactly 3 queries (Broad, Moderate, Narrow):
+- Broad: AT MOST 2 concept groups, all synonyms, wildcards, AND only
+- Moderate: AT MOST 3 concept groups, 3-5 synonyms, NEAR/10 or AND per pair, wildcards
+- Narrow: AT MOST 2 concept groups, 2-3 synonyms, CL= on core novelty, ADJ/3, wildcards
+
+ONION RING — Return N layered queries, each adding one more concept group:
+- Start with the 2 highest-importance concepts (broadest layer)
+- Each subsequent layer adds the next most important concept
+- All layers use wildcards, all synonyms for each concept, AND between groups
+- The last layer includes all concepts (narrowest)
+
+FACETED — Return up to 6 two-concept pair queries:
+- Generate queries from 2-concept pairs, sorted by combined importance (high×high first)
+- Each pair: (group1 all terms with wildcards) AND (group2 all terms with wildcards)
+- Maximum 6 pairs
+- Use broad synonym coverage with wildcards in each group`;
+
+async function generateStrategySearches(
+  body: GenerateStrategyBody
+): Promise<object> {
+  const {concepts, strategy} = body;
+
+  if (!concepts || !Array.isArray(concepts) || concepts.length === 0) {
+    throw new Error("concepts array is required");
+  }
+  if (!strategy || !['telescoping', 'onion-ring', 'faceted'].includes(strategy)) {
+    throw new Error("strategy must be 'telescoping', 'onion-ring', or 'faceted'");
+  }
+
+  const enabled = concepts.filter((c) => c.enabled !== false);
+  if (enabled.length === 0) {
+    throw new Error("at least one enabled concept is required");
+  }
+
+  const conceptsSummary = enabled.map((c, i) => {
+    return `${i + 1}. "${c.name}" [${c.category}, ${c.importance}]: synonyms = [${c.synonyms.join(", ")}]`;
+  }).join("\n");
+
+  const model = getModel();
+  const result = await model.generateContent({
+    contents: [{
+      role: "user",
+      parts: [{
+        text: `${STRATEGY_SEARCH_PROMPT}
+
+Strategy: ${strategy.toUpperCase()}
+
+Generate search queries from these concepts:
+
+${conceptsSummary}`,
+      }],
+    }],
+    generationConfig: {
+      temperature: 0.2,
+      maxOutputTokens: 3000,
+      responseMimeType: "application/json",
+    },
+  });
+
+  const content = result.response.text();
+  if (!content) {
+    throw new Error("Empty response from Gemini API");
+  }
+
+  let parsed = JSON.parse(content);
+
+  if (Array.isArray(parsed)) {
+    parsed = parsed[0] || {};
+  }
+  if (typeof parsed === "string") {
+    try {
+      parsed = JSON.parse(parsed);
+      if (Array.isArray(parsed)) parsed = parsed[0] || {};
+    } catch {
+      // leave as-is
+    }
+  }
+
+  // Normalize: ensure queries array exists
+  if (!parsed.queries && Array.isArray(parsed)) {
+    parsed = {queries: parsed};
+  }
+
+  return parsed;
+}
+
+// ── Full Report Sections (Invention Summary + Claim Charts + Conclusion) ──
+
+const REPORT_SECTIONS_PROMPT = `You are a patent search analyst generating sections of a formal patent search report. Given an invention description, its technical concepts, EPO-categorized prior art references, and a prior art analysis summary, generate THREE sections:
+
+1. INVENTION SUMMARY — A narrative paragraph describing the invention, followed by a list of discrete technical features (F1, F2, ...) with importance levels (high/medium/low) and descriptions.
+
+2. CLAIM CHARTS — For each X or Y category patent (up to 4), provide element-by-element mapping showing how the prior art discloses (or fails to disclose) each invention feature. Include specific citations to claims/paragraphs. Rate each mapping as "full", "partial", or "none".
+
+3. CONCLUSION & RECOMMENDATIONS — Synthesize the 102/103 analysis into a patentability assessment with novelty assessment, obviousness assessment, overall risk level, and actionable recommendations.
+
+Return JSON matching this exact schema:
+
+{
+  "inventionSummary": {
+    "narrative": "A prose paragraph describing the invention and its technical context...",
+    "features": [
+      {
+        "id": "F1",
+        "name": "short feature name",
+        "importance": "high|medium|low",
+        "description": "detailed description of this technical feature"
+      }
+    ]
+  },
+  "claimCharts": [
+    {
+      "patentId": "the patent document ID",
+      "epoCategory": "X|Y",
+      "narrativeIntro": "prose paragraph explaining this reference's relevance...",
+      "elements": [
+        {
+          "featureId": "F1",
+          "featureName": "the feature name",
+          "priorArtDisclosure": "description of how the reference discloses this feature",
+          "sourceRef": "Claim 1; [0024]",
+          "coverage": "full|partial|none",
+          "coverageExplanation": "FULLY DISCLOSED — explanation | PARTIALLY DISCLOSED — explanation | NOT DISCLOSED — explanation"
+        }
+      ]
+    }
+  ],
+  "conclusion": {
+    "noveltyAssessment": "prose paragraph on 35 USC 102 novelty...",
+    "obviousnessAssessment": "prose paragraph on 35 USC 103 obviousness...",
+    "overallRisk": "low|moderate|high",
+    "recommendations": ["actionable recommendation 1", "actionable recommendation 2", "..."]
+  }
+}
+
+Rules:
+- Features should map directly to the provided concepts, using the concept name and importance
+- Claim charts should only be generated for X and Y category patents (not A)
+- Limit claim charts to at most 4 references
+- For each claim chart element, provide specific document citations (claim numbers, paragraph references) where possible
+- The conclusion should synthesize the section102 and section103 findings into a coherent assessment
+- Overall risk should be "high" if 102 anticipation is found, "moderate" if strong 103 combinations exist, "low" otherwise
+- Recommendations should be specific and actionable (e.g., "emphasize the combination of features F2 and F4 in claims")
+- Return ONLY valid JSON, no markdown.`;
+
+interface ReportSectionsBody {
+  query: string;
+  concepts: { name: string; category?: string; synonyms: string[]; importance?: string }[];
+  topPatents: {
+    patentId: string;
+    title: string;
+    abstract?: string;
+    claims?: string;
+    cpcCodes?: string[];
+    assignee?: string;
+  }[];
+  priorArtSummary: {
+    section102Count: number;
+    section103Count: number;
+    maxCombinedCoverage: number;
+    coverageGaps: string[];
+  };
+  epoCategories: { patentId: string; category: 'X' | 'Y' | 'A' }[];
+}
+
+async function generateReportSections(body: ReportSectionsBody): Promise<object> {
+  const {query, concepts, topPatents, priorArtSummary, epoCategories} = body;
+
+  if (!query || typeof query !== "string") {
+    throw new Error("query string is required");
+  }
+  if (!concepts || !Array.isArray(concepts) || concepts.length === 0) {
+    throw new Error("concepts array is required");
+  }
+
+  const conceptsSummary = concepts.map(
+    (c, i) => `${i + 1}. "${c.name}" [${c.category || "device"}, ${c.importance || "medium"}]: synonyms = [${c.synonyms.join(", ")}]`
+  ).join("\n");
+
+  const epoCatMap: Record<string, string> = {};
+  for (const ec of (epoCategories || [])) {
+    epoCatMap[ec.patentId] = ec.category;
+  }
+
+  const patentSummaries = (topPatents || []).slice(0, 7).map((p, i) => {
+    const cat = epoCatMap[p.patentId] || "A";
+    const parts = [`[${i + 1}] ID: ${p.patentId} (Category: ${cat})`, `Title: ${p.title}`];
+    if (p.assignee) parts.push(`Assignee: ${p.assignee}`);
+    const abs = (p.abstract || "").substring(0, 800);
+    if (abs) parts.push(`Abstract: ${abs}`);
+    if (p.claims) parts.push(`Claims: ${p.claims.substring(0, 600)}`);
+    if (p.cpcCodes && p.cpcCodes.length > 0) {
+      parts.push(`CPC: ${p.cpcCodes.join(", ")}`);
+    }
+    return parts.join("\n");
+  }).join("\n\n");
+
+  const summaryText = `Section 102 candidates: ${priorArtSummary?.section102Count ?? 0}
+Section 103 combinations: ${priorArtSummary?.section103Count ?? 0}
+Max combined coverage: ${priorArtSummary?.maxCombinedCoverage ?? 0}%
+Coverage gaps: ${(priorArtSummary?.coverageGaps || []).join(", ") || "none identified"}`;
+
+  const model = getModel();
+  const result = await model.generateContent({
+    contents: [{
+      role: "user",
+      parts: [{
+        text: `${REPORT_SECTIONS_PROMPT}
+
+Invention description: "${query}"
+
+Key concepts:
+${conceptsSummary}
+
+Prior art summary:
+${summaryText}
+
+Prior art patents (top references):
+
+${patentSummaries}`,
+      }],
+    }],
+    generationConfig: {
+      temperature: 0.2,
+      maxOutputTokens: 16000,
+      responseMimeType: "application/json",
+    },
+  });
+
+  const content = result.response.text();
+  if (!content) {
+    throw new Error("Empty response from Gemini API");
+  }
+
+  let parsed = JSON.parse(content);
+  if (Array.isArray(parsed)) {
+    parsed = parsed[0] || {};
+  }
+  if (typeof parsed === "string") {
+    try {
+      parsed = JSON.parse(parsed);
+      if (Array.isArray(parsed)) parsed = parsed[0] || {};
+    } catch {
+      // leave as-is
+    }
+  }
+
+  return parsed;
+}
+
 // ── Router ──
 
 export async function handleAIRequest(
@@ -1251,6 +1618,12 @@ export async function handleAIRequest(
     return analyzeRound(body as unknown as AnalyzeRoundBody);
   case "/analyze-prior-art":
     return analyzePriorArt(body as unknown as AnalyzePriorArtBody);
+  case "/generate-strategy-searches":
+    return generateStrategySearches(body as unknown as GenerateStrategyBody);
+  case "/generate-report-sections":
+    return generateReportSections(body as unknown as ReportSectionsBody);
+  case "/enrich-bigquery":
+    return enrichFromBigQuery(body);
   default:
     throw new Error(`Unknown endpoint: ${path}`);
   }

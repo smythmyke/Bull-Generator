@@ -2,7 +2,13 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuthContext } from '../contexts/AuthContext';
 import { rankPatents, RankedPatent, PatentForRanking, Snippet } from '../services/apiService';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs';
-import PriorArtAnalysis from './PriorArtAnalysis';
+import PriorArtAnalysis, { PriorArtReportState, INITIAL_REPORT_STATE } from './PriorArtAnalysis';
+import FullReportTab from './FullReportTab';
+import { extractQueryTerms, computeHybridScore, ScoreBreakdown, QueryTerms } from '../utils/scoringUtils';
+import { GenerateReportSectionsResponse } from '../services/apiService';
+import HighlightedText from '../components/HighlightedText';
+import ScoreTooltip from '../components/ScoreTooltip';
+import { exportSearchReportPDF, exportSearchReportDOCX, SearchReportData } from '../utils/exportReport';
 
 interface DeepPatentResult {
   title: string;
@@ -24,6 +30,15 @@ interface DeepPatentResult {
   doi?: string;
   fieldsOfStudy?: string[];
   enrichedVia?: string;
+  // BigQuery enrichment fields (optional)
+  independentClaims?: { claimNumber: number; text: string }[];
+  totalClaimCount?: number;
+  descriptionSnippet?: string;
+  backwardCitationCount?: number;
+  backwardCitations?: { citedPublicationNumber: string; citationType: string }[];
+  cpcDetails?: { code: string; inventive: boolean; first: boolean }[];
+  familyId?: string;
+  entityStatus?: string;
 }
 
 interface RelaxationStep {
@@ -57,6 +72,13 @@ interface SearchMeta {
   rounds?: { round: number; query: string; count: number }[];
   searchLog?: SearchLogEntry[];
   totalDurationMs?: number;
+  // Strategy fields (optional, backward-compatible)
+  strategy?: 'telescoping' | 'onion-ring' | 'faceted';
+  depth?: 'quick' | 'pro-auto' | 'pro-interactive';
+  mergeCount?: number;
+  layersStopped?: number;
+  pairCount?: number;
+  frequencyDistribution?: Record<number, number>;
 }
 
 interface StoredResults {
@@ -64,13 +86,15 @@ interface StoredResults {
   patents: DeepPatentResult[];
   totalAvailable: number;
   page: number;
-  concepts?: { name: string; synonyms: string[] }[];
+  concepts?: { name: string; synonyms: string[]; importance?: string; category?: string }[];
   searchMeta?: SearchMeta;
 }
 
 type RankedDisplayPatent = DeepPatentResult & {
   rank: number;
   score: number;
+  semanticScore: number;
+  scoreBreakdown: ScoreBreakdown;
   reasoning: string;
   snippets: Snippet[];
   foundBy: string[];
@@ -114,7 +138,10 @@ const ResultsPage: React.FC = () => {
   const [expandedPatent, setExpandedPatent] = useState<string | null>(null);
   const [searchMeta, setSearchMeta] = useState<SearchMeta | null>(null);
   const [sortBy, setSortBy] = useState<SortOption>('ai-score');
-  const [concepts, setConcepts] = useState<{ name: string; synonyms: string[] }[] | undefined>(undefined);
+  const [concepts, setConcepts] = useState<{ name: string; synonyms: string[]; importance?: string; category?: string }[] | undefined>(undefined);
+  const [queryTerms, setQueryTerms] = useState<QueryTerms>({ raw: [], stemmed: [] });
+  const [priorArtReport, setPriorArtReport] = useState<PriorArtReportState>(INITIAL_REPORT_STATE);
+  const [fullReportSections, setFullReportSections] = useState<GenerateReportSectionsResponse | null>(null);
 
   // Parse a priority date from the dates string (e.g., "Priority 2016-10-21 • Filed 2025-01-17...")
   const parsePriorityDate = (dates: string): Date | null => {
@@ -179,6 +206,37 @@ const ResultsPage: React.FC = () => {
     if (data.searchMeta) setSearchMeta(data.searchMeta);
     if (data.concepts) setConcepts(data.concepts);
 
+    // Extract query terms for hybrid scoring and highlighting
+    const terms = extractQueryTerms(data.query);
+    setQueryTerms(terms);
+
+    // BigQuery enrichment diagnostic
+    const bqEnriched = data.patents.filter((p: DeepPatentResult) => p.enrichedVia === 'bigquery');
+    const withClaims = data.patents.filter((p: DeepPatentResult) => p.independentClaims && p.independentClaims.length > 0);
+    const withCitations = data.patents.filter((p: DeepPatentResult) => p.backwardCitationCount !== undefined);
+    const withCpcDetails = data.patents.filter((p: DeepPatentResult) => p.cpcDetails && p.cpcDetails.length > 0);
+    const withDesc = data.patents.filter((p: DeepPatentResult) => p.descriptionSnippet && p.descriptionSnippet.length > 0);
+    console.log(`[ResultsPage-BQ] === BigQuery Enrichment Check ===`);
+    console.log(`[ResultsPage-BQ] Total patents: ${data.patents.length}`);
+    console.log(`[ResultsPage-BQ] enrichedVia=bigquery: ${bqEnriched.length}`);
+    console.log(`[ResultsPage-BQ] With independentClaims: ${withClaims.length}`);
+    console.log(`[ResultsPage-BQ] With backwardCitationCount: ${withCitations.length}`);
+    console.log(`[ResultsPage-BQ] With cpcDetails: ${withCpcDetails.length}`);
+    console.log(`[ResultsPage-BQ] With descriptionSnippet: ${withDesc.length}`);
+    if (bqEnriched.length > 0) {
+      const sample = bqEnriched[0];
+      console.log(`[ResultsPage-BQ] Sample enriched patent:`, {
+        id: sample.patentId,
+        independentClaims: sample.independentClaims?.length,
+        totalClaimCount: sample.totalClaimCount,
+        backwardCitationCount: sample.backwardCitationCount,
+        cpcDetails: sample.cpcDetails?.length,
+        descSnippetLen: sample.descriptionSnippet?.length,
+        familyId: sample.familyId,
+        entityStatus: sample.entityStatus,
+      });
+    }
+
     if (data.patents.length === 0) {
       setStatus('error');
       setError('No patents found to rank.');
@@ -202,28 +260,47 @@ const ResultsPage: React.FC = () => {
         // NPL fields (passed through to rank prompt)
         ...(p.citationCount !== undefined ? { citationCount: p.citationCount } : {}),
         ...(p.venue ? { venue: p.venue } : {}),
+        // BigQuery enrichment fields (passed through to rank prompt)
+        ...(p.independentClaims ? { independentClaims: p.independentClaims } : {}),
+        ...(p.backwardCitationCount !== undefined ? { backwardCitationCount: p.backwardCitationCount } : {}),
       })) as PatentForRanking[];
 
       const rankResponse = await rankPatents(data.query, patentsForRanking);
 
-      // Merge rank data with full patent data, filter out low-relevance (score < 60)
+      // Merge rank data with full patent data and compute hybrid scores
       const merged: RankedDisplayPatent[] = rankResponse.ranked
         .map(ranked => {
           const patent = data.patents.find(p => p.patentId === ranked.patentId);
           if (!patent) return null;
+
+          const aiScore = ranked.semanticScore || ranked.score;
+          const breakdown = computeHybridScore({
+            terms,
+            title: patent.title,
+            abstract: patent.fullAbstract || patent.abstract || '',
+            firstClaim: patent.firstClaim || '',
+            foundBy: patent.foundBy || [],
+            cpcCodes: patent.cpcCodes || [],
+            aiSemanticScore: aiScore,
+            backwardCitationCount: patent.backwardCitationCount,
+            independentClaims: patent.independentClaims,
+          });
+
           return {
             ...patent,
             rank: ranked.rank,
-            score: ranked.score,
+            score: breakdown.final,
+            semanticScore: aiScore,
+            scoreBreakdown: breakdown,
             reasoning: ranked.reasoning,
             snippets: ranked.snippets || [],
             foundBy: patent.foundBy || [],
           };
         })
-        .filter((p): p is RankedDisplayPatent => p !== null)
-        .filter(p => p.score >= 60); // Only show green (80+) and yellow (60+)
+        .filter((p): p is RankedDisplayPatent => p !== null);
 
-      // Re-number ranks sequentially
+      // Sort by hybrid score and re-number ranks
+      merged.sort((a, b) => b.score - a.score);
       merged.forEach((p, i) => { p.rank = i + 1; });
 
       setAllRankedPatents(merged);
@@ -253,6 +330,62 @@ const ResultsPage: React.FC = () => {
       }
     });
   }, [authLoading, isAuthenticated, processResults]);
+
+  // Build structured data for search report export
+  const buildSearchReportData = (): SearchReportData | null => {
+    if (!searchMeta?.searchLog) return null;
+
+    const modeName = searchMeta.mode === 'pro-auto' ? 'Pro Auto' : searchMeta.mode === 'pro-interactive' ? 'Pro Interactive' : 'Quick';
+    const strategyName = searchMeta.strategy ? (searchMeta.strategy === 'onion-ring' ? 'Onion Ring' : searchMeta.strategy.charAt(0).toUpperCase() + searchMeta.strategy.slice(1)) : undefined;
+
+    // Build source attribution
+    const sourceCounts: Record<string, number> = {};
+    for (const patent of allRankedPatents) {
+      for (const source of (patent.foundBy || [])) {
+        sourceCounts[source] = (sourceCounts[source] || 0) + 1;
+      }
+    }
+    const sourceAttributionFinal = Object.entries(sourceCounts)
+      .sort(([, a], [, b]) => b - a)
+      .map(([src, count]) => {
+        const badge = getFoundByBadge(src);
+        return { source: src, label: badge?.label || src, count };
+      });
+
+    // Build traceability
+    const traceability = sortedPatents.slice(0, 15).map(patent => ({
+      rank: patent.rank,
+      patentId: patent.patentNumber || patent.patentId,
+      title: patent.title,
+      score: patent.score,
+      sources: (patent.foundBy || []).map(s => {
+        const badge = getFoundByBadge(s);
+        return badge?.label || s;
+      }),
+      sourceQueries: (patent.foundBy || []).map(s => {
+        for (const logEntry of (searchMeta.searchLog || [])) {
+          const key = `round${logEntry.round}-${logEntry.label.toLowerCase().replace(/\s+/g, '-')}`;
+          if (key === s || logEntry.label.toLowerCase().replace(/\s+/g, '-') === s) {
+            return logEntry.query;
+          }
+        }
+        return '';
+      }),
+    }));
+
+    return {
+      query,
+      date: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+      mode: modeName,
+      strategy: strategyName,
+      totalQueries: searchMeta.searchLog.length,
+      uniqueResults: searchMeta.uniqueCount,
+      totalDurationMs: searchMeta.totalDurationMs,
+      searchLog: searchMeta.searchLog,
+      traceability,
+      sourceAttribution: sourceAttributionFinal,
+    };
+  };
 
   const getScoreColor = (score: number): string => {
     if (score >= 80) return 'text-green-600 bg-green-50 border-green-200';
@@ -323,6 +456,29 @@ const ResultsPage: React.FC = () => {
           <div className="flex items-center justify-between mt-3">
             {searchMeta && (
               <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                {/* Strategy + Depth badges */}
+                {searchMeta.strategy && (
+                  <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded border border-indigo-200 font-semibold capitalize">
+                    {searchMeta.strategy === 'onion-ring' ? 'Onion Ring' : searchMeta.strategy}
+                  </span>
+                )}
+                {searchMeta.mergeCount !== undefined && searchMeta.mergeCount > 0 && (
+                  <span className="px-2 py-0.5 bg-amber-50 text-amber-700 rounded border border-amber-200">
+                    {searchMeta.mergeCount} merged
+                  </span>
+                )}
+                {searchMeta.layersStopped !== undefined && (
+                  <span className="px-2 py-0.5 bg-teal-50 text-teal-700 rounded border border-teal-200">
+                    Layer {searchMeta.layersStopped}
+                  </span>
+                )}
+                {searchMeta.pairCount !== undefined && (
+                  <span className="px-2 py-0.5 bg-orange-50 text-orange-700 rounded border border-orange-200">
+                    {searchMeta.pairCount} pairs
+                  </span>
+                )}
+
+                {/* Existing mode badges */}
                 {searchMeta.mode && searchMeta.mode !== 'quick' ? (
                   <>
                     <span className="px-2 py-0.5 bg-gradient-to-r from-blue-50 to-purple-50 text-purple-700 rounded border border-purple-200 font-semibold">
@@ -349,7 +505,7 @@ const ResultsPage: React.FC = () => {
                       </span>
                     )}
                   </>
-                ) : (
+                ) : !searchMeta.strategy ? (
                   <>
                     <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded border border-blue-200">
                       Raw: {searchMeta.rawTextCount}
@@ -361,7 +517,7 @@ const ResultsPage: React.FC = () => {
                       AI: {searchMeta.aiOptimizedCount}
                     </span>
                   </>
-                )}
+                ) : null}
                 <span className="font-medium text-foreground">
                   {searchMeta.uniqueCount} unique
                 </span>
@@ -376,7 +532,7 @@ const ResultsPage: React.FC = () => {
                 onChange={(e) => { setSortBy(e.target.value as SortOption); setDisplayPage(1); }}
                 className="text-xs border rounded px-2 py-1 bg-background"
               >
-                <option value="ai-score">AI Relevance Score</option>
+                <option value="ai-score">Relevance Score</option>
                 <option value="date-newest">Priority Date (Newest)</option>
                 <option value="date-oldest">Priority Date (Oldest)</option>
                 <option value="multi-source">Multi-Source Match</option>
@@ -393,9 +549,16 @@ const ResultsPage: React.FC = () => {
             <TabsTrigger value="results" className="text-sm font-bold px-4 py-2">
               Results ({allRankedPatents.length})
             </TabsTrigger>
-            <TabsTrigger value="prior-art" className="text-sm font-bold px-4 py-2">
-              Examiner's Report
-            </TabsTrigger>
+            {concepts && concepts.length > 0 && (
+              <TabsTrigger value="prior-art" className="text-sm font-bold px-4 py-2">
+                Examiner's Report
+              </TabsTrigger>
+            )}
+            {concepts && concepts.length > 0 && (
+              <TabsTrigger value="full-report" className="text-sm font-bold px-4 py-2">
+                Full Report
+              </TabsTrigger>
+            )}
             {searchMeta?.searchLog && searchMeta.searchLog.length > 0 && (
               <TabsTrigger value="search-report" className="text-sm font-bold px-4 py-2">
                 Search Report
@@ -428,16 +591,21 @@ const ResultsPage: React.FC = () => {
                     <span className="text-2xl font-bold text-muted-foreground">
                       #{patent.rank}
                     </span>
-                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full text-white ${getScoreBadgeColor(patent.score)}`}>
-                      {patent.score}
-                    </span>
+                    <ScoreTooltip
+                      score={patent.score}
+                      breakdown={patent.scoreBreakdown}
+                      badgeClassName={getScoreBadgeColor(patent.score)}
+                    />
                   </div>
 
                   {/* Patent Info */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <h2 className="text-base font-semibold leading-tight">
-                        {patent.title || 'Untitled Patent'}
+                        <HighlightedText
+                          text={patent.title || 'Untitled Patent'}
+                          queryTerms={queryTerms.raw}
+                        />
                       </h2>
                       {patent.countries?.includes('NPL') && (
                         <span className="text-xs px-1.5 py-0.5 bg-indigo-100 text-indigo-700 rounded border border-indigo-200 font-medium shrink-0">
@@ -484,6 +652,17 @@ const ResultsPage: React.FC = () => {
                           } citations
                         </span>
                       )}
+                      {patent.backwardCitationCount !== undefined && patent.backwardCitationCount > 0 && (
+                        <span className={`text-xs px-1.5 py-0.5 rounded border font-medium ${
+                          patent.backwardCitationCount >= 50
+                            ? 'bg-yellow-100 text-yellow-800 border-yellow-300'
+                            : patent.backwardCitationCount >= 20
+                              ? 'bg-orange-50 text-orange-700 border-orange-200'
+                              : 'bg-slate-50 text-slate-600 border-slate-200'
+                        }`}>
+                          {patent.backwardCitationCount} refs
+                        </span>
+                      )}
                       {patent.fieldsOfStudy && patent.fieldsOfStudy.length > 0 && (
                         patent.fieldsOfStudy.slice(0, 3).map((field, i) => (
                           <span key={i} className="text-xs px-1.5 py-0.5 bg-violet-50 text-violet-600 rounded border border-violet-200">
@@ -521,7 +700,7 @@ const ResultsPage: React.FC = () => {
                               {snippet.source}
                             </span>
                             <div className="text-xs">
-                              <span className="italic text-foreground">"{snippet.quote}"</span>
+                              <span className="italic text-foreground">"<HighlightedText text={snippet.quote} queryTerms={queryTerms.raw} />"</span>
                               <span className="text-muted-foreground ml-1">— {snippet.relevance}</span>
                             </div>
                           </div>
@@ -584,8 +763,30 @@ const ResultsPage: React.FC = () => {
                   </div>
                 </div>
 
-                {/* CPC Codes */}
-                {patent.cpcCodes?.length > 0 && (
+                {/* CPC Codes — enhanced with inventive flags if available */}
+                {(patent.cpcDetails?.length ?? 0) > 0 ? (
+                  <div className="flex flex-wrap gap-1 mt-2 ml-[4.5rem]">
+                    {patent.cpcDetails!.slice(0, 8).map((cpc, i) => (
+                      <span
+                        key={i}
+                        className={`text-xs px-1.5 py-0.5 rounded font-mono ${
+                          cpc.inventive
+                            ? 'bg-amber-50 text-amber-800 border border-amber-300 font-bold'
+                            : cpc.first
+                              ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                              : 'bg-secondary'
+                        }`}
+                      >
+                        {cpc.code}{cpc.inventive ? '*' : ''}
+                      </span>
+                    ))}
+                    {patent.cpcDetails!.length > 8 && (
+                      <span className="text-xs text-muted-foreground">
+                        +{patent.cpcDetails!.length - 8} more
+                      </span>
+                    )}
+                  </div>
+                ) : patent.cpcCodes?.length > 0 ? (
                   <div className="flex flex-wrap gap-1 mt-2 ml-[4.5rem]">
                     {patent.cpcCodes.slice(0, 8).map((code, i) => (
                       <span key={i} className="text-xs px-1.5 py-0.5 bg-secondary rounded font-mono">
@@ -598,7 +799,7 @@ const ResultsPage: React.FC = () => {
                       </span>
                     )}
                   </div>
-                )}
+                ) : null}
 
                 {/* Countries */}
                 {patent.countries?.length > 0 && (
@@ -620,16 +821,59 @@ const ResultsPage: React.FC = () => {
                       <div>
                         <h3 className="text-sm font-semibold mb-1">Abstract</h3>
                         <p className="text-sm text-muted-foreground leading-relaxed">
-                          {patent.fullAbstract || patent.abstract}
+                          <HighlightedText
+                            text={patent.fullAbstract || patent.abstract}
+                            queryTerms={queryTerms.raw}
+                            snippetQuotes={patent.snippets?.filter(s => s.source === 'abstract').map(s => s.quote)}
+                          />
                         </p>
                       </div>
                     )}
-                    {patent.firstClaim && (
+                    {patent.independentClaims && patent.independentClaims.length > 0 ? (
+                      <div>
+                        <h3 className="text-sm font-semibold mb-1">
+                          Independent Claims ({patent.independentClaims.length}{patent.totalClaimCount ? ` of ${patent.totalClaimCount} total` : ''})
+                        </h3>
+                        <div className="space-y-2">
+                          {patent.independentClaims.map((claim, i) => (
+                            <div key={i} className="text-sm text-muted-foreground leading-relaxed">
+                              <span className="font-medium text-foreground">Claim {claim.claimNumber}:</span>{' '}
+                              <HighlightedText
+                                text={claim.text}
+                                queryTerms={queryTerms.raw}
+                                snippetQuotes={patent.snippets?.filter(s => s.source === 'claim').map(s => s.quote)}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : patent.firstClaim ? (
                       <div>
                         <h3 className="text-sm font-semibold mb-1">First Claim</h3>
                         <p className="text-sm text-muted-foreground leading-relaxed">
-                          {patent.firstClaim}
+                          <HighlightedText
+                            text={patent.firstClaim}
+                            queryTerms={queryTerms.raw}
+                            snippetQuotes={patent.snippets?.filter(s => s.source === 'claim').map(s => s.quote)}
+                          />
                         </p>
+                      </div>
+                    ) : null}
+                    {patent.descriptionSnippet && (
+                      <div>
+                        <h3 className="text-sm font-semibold mb-1">Description Excerpt</h3>
+                        <p className="text-sm text-muted-foreground leading-relaxed line-clamp-6">
+                          <HighlightedText
+                            text={patent.descriptionSnippet}
+                            queryTerms={queryTerms.raw}
+                          />
+                        </p>
+                      </div>
+                    )}
+                    {(patent.familyId || patent.entityStatus) && (
+                      <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+                        {patent.familyId && <span>Family: {patent.familyId}</span>}
+                        {patent.entityStatus && <span>Entity: {patent.entityStatus}</span>}
                       </div>
                     )}
                   </div>
@@ -663,34 +907,129 @@ const ResultsPage: React.FC = () => {
 
           </TabsContent>
 
-          <TabsContent value="prior-art">
-            <PriorArtAnalysis
-              query={query}
-              concepts={concepts}
-              patents={allRankedPatents}
-            />
-          </TabsContent>
+          {concepts && concepts.length > 0 && (
+            <TabsContent value="prior-art">
+              <PriorArtAnalysis
+                query={query}
+                concepts={concepts}
+                patents={allRankedPatents}
+                reportState={priorArtReport}
+                onReportStateChange={setPriorArtReport}
+              />
+            </TabsContent>
+          )}
+
+          {concepts && concepts.length > 0 && (
+            <TabsContent value="full-report">
+              <FullReportTab
+                query={query}
+                concepts={concepts}
+                patents={allRankedPatents}
+                searchMeta={searchMeta}
+                priorArtResult={priorArtReport.result}
+                priorArtConcepts={priorArtReport.usedConcepts}
+                fullReportSections={fullReportSections}
+                onFullReportSectionsChange={setFullReportSections}
+              />
+            </TabsContent>
+          )}
 
           {searchMeta?.searchLog && searchMeta.searchLog.length > 0 && (
             <TabsContent value="search-report">
-              <div className="pt-4">
+              <div className="pt-4 space-y-4">
+                {/* Section 1 — Report Header */}
                 <div className="border rounded-lg bg-slate-50/50 overflow-hidden">
                   <div className="px-4 py-3 border-b bg-slate-100/80">
                     <div className="flex items-center justify-between">
-                      <h2 className="text-sm font-semibold text-slate-800">Search Report</h2>
+                      <div>
+                        <h2 className="text-base font-bold text-slate-800">Patent Search Report</h2>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Generated: {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            const reportData = buildSearchReportData();
+                            if (reportData) exportSearchReportPDF(reportData);
+                          }}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-red-50 text-red-700 border border-red-200 rounded-md hover:bg-red-100 transition-colors"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/><line x1="10" x2="8" y1="9" y2="9"/></svg>
+                          Export PDF
+                        </button>
+                        <button
+                          onClick={async () => {
+                            const reportData = buildSearchReportData();
+                            if (reportData) await exportSearchReportDOCX(reportData);
+                          }}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded-md hover:bg-blue-100 transition-colors"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                          Export DOCX
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="px-4 py-3 space-y-2">
+                    <div className="flex flex-wrap gap-2">
+                      <span className="text-xs px-2 py-0.5 bg-slate-100 text-slate-700 rounded border border-slate-200 font-medium">
+                        {searchMeta.mode === 'pro-auto' ? 'Pro Auto' : searchMeta.mode === 'pro-interactive' ? 'Pro Interactive' : 'Quick'}
+                      </span>
+                      {searchMeta.strategy && (
+                        <span className="text-xs px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded border border-indigo-200 font-medium capitalize">
+                          {searchMeta.strategy === 'onion-ring' ? 'Onion Ring' : searchMeta.strategy}
+                        </span>
+                      )}
+                      <span className="text-xs px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded border border-emerald-200 font-medium">
+                        {searchMeta.searchLog.length} queries
+                      </span>
+                      <span className="text-xs px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded border border-emerald-200 font-medium">
+                        {searchMeta.uniqueCount} unique results
+                      </span>
                       {searchMeta.totalDurationMs && (
-                        <span className="text-xs text-slate-500">
-                          Total: {(searchMeta.totalDurationMs / 1000).toFixed(1)}s
+                        <span className="text-xs px-2 py-0.5 bg-slate-100 text-slate-600 rounded border border-slate-200">
+                          {(searchMeta.totalDurationMs / 1000).toFixed(1)}s total
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      {searchMeta.mode === 'pro-auto' ? 'Pro Auto' : searchMeta.mode === 'pro-interactive' ? 'Pro Interactive' : 'Quick'} search
-                      {' \u2014 '}{searchMeta.searchLog.length} queries executed
-                      {' \u2014 '}{searchMeta.uniqueCount} unique results
-                    </p>
+                    <div className="text-xs text-slate-600">
+                      <span className="font-medium text-slate-700">Query: </span>
+                      <span className="italic">{query}</span>
+                    </div>
                   </div>
+                </div>
 
+                {/* Section 2 — Search Strategy Summary */}
+                {searchMeta.strategy && (
+                  <div className="border rounded-lg bg-slate-50/50 overflow-hidden">
+                    <div className="px-4 py-3 border-b bg-slate-100/80">
+                      <h3 className="text-sm font-semibold text-slate-800">Search Strategy Summary</h3>
+                    </div>
+                    <div className="px-4 py-3 text-xs text-slate-600 space-y-1">
+                      <p>
+                        <span className="font-medium text-slate-700">Strategy: </span>
+                        {searchMeta.strategy === 'telescoping' && 'Telescoping — Broad/Moderate/Narrow tiers progressively narrowing scope'}
+                        {searchMeta.strategy === 'onion-ring' && 'Onion Ring — Adaptive layers expanding outward until diminishing returns'}
+                        {searchMeta.strategy === 'faceted' && 'Faceted — Concept-pair queries covering all facet combinations'}
+                      </p>
+                      <p>
+                        <span className="font-medium text-slate-700">Rounds: </span>
+                        {[...new Set(searchMeta.searchLog.map(e => e.round))].length}
+                        {searchMeta.mergeCount !== undefined && searchMeta.mergeCount > 0 && ` | ${searchMeta.mergeCount} merged duplicates`}
+                        {searchMeta.layersStopped !== undefined && ` | Stopped at layer ${searchMeta.layersStopped}`}
+                        {searchMeta.pairCount !== undefined && ` | ${searchMeta.pairCount} concept pairs`}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Section 3 — Query Execution Log */}
+                <div className="border rounded-lg bg-slate-50/50 overflow-hidden">
+                  <div className="px-4 py-3 border-b bg-slate-100/80">
+                    <h3 className="text-sm font-semibold text-slate-800">Query Execution Log</h3>
+                  </div>
                   <div className="divide-y divide-slate-200">
                     {(() => {
                       const rounds = new Set(searchMeta.searchLog.map(e => e.round));
@@ -757,10 +1096,93 @@ const ResultsPage: React.FC = () => {
                       });
                     })()}
                   </div>
+                </div>
 
-                  {/* Source attribution summary */}
-                  <div className="px-4 py-3 border-t bg-slate-100/50">
-                    <h3 className="text-xs font-semibold text-slate-700 mb-1.5">Source Attribution</h3>
+                {/* Section 4 — Source Traceability */}
+                {allRankedPatents.length > 0 && (
+                  <div className="border rounded-lg bg-slate-50/50 overflow-hidden">
+                    <div className="px-4 py-3 border-b bg-slate-100/80">
+                      <h3 className="text-sm font-semibold text-slate-800">Top Results Source Traceability</h3>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Which queries found each top-ranked patent
+                      </p>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="border-b bg-slate-50/50">
+                            <th className="text-left px-3 py-2 font-semibold w-10">Rank</th>
+                            <th className="text-left px-3 py-2 font-semibold min-w-[100px]">Patent ID</th>
+                            <th className="text-left px-3 py-2 font-semibold">Title</th>
+                            <th className="text-center px-3 py-2 font-semibold w-14">Score</th>
+                            <th className="text-left px-3 py-2 font-semibold min-w-[140px]">Found By</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {sortedPatents.slice(0, 15).map((patent) => {
+                            // Build lookup: map foundBy labels to search log query strings
+                            const queryLookup: Record<string, string> = {};
+                            if (searchMeta.searchLog) {
+                              for (const logEntry of searchMeta.searchLog) {
+                                // Match against common foundBy patterns
+                                const key = `round${logEntry.round}-${logEntry.label.toLowerCase().replace(/\s+/g, '-')}`;
+                                queryLookup[key] = logEntry.query;
+                                // Also match label directly
+                                queryLookup[logEntry.label.toLowerCase().replace(/\s+/g, '-')] = logEntry.query;
+                              }
+                            }
+
+                            return (
+                              <tr key={patent.patentId} className="border-b hover:bg-slate-50/30">
+                                <td className="px-3 py-2 font-bold text-slate-500">#{patent.rank}</td>
+                                <td className="px-3 py-2 font-mono font-medium text-slate-700">
+                                  {patent.patentNumber || patent.patentId}
+                                </td>
+                                <td className="px-3 py-2 text-slate-600 truncate max-w-[250px]" title={patent.title}>
+                                  {patent.title}
+                                </td>
+                                <td className="px-3 py-2 text-center">
+                                  <span className={`inline-block px-1.5 py-0.5 rounded font-medium ${
+                                    patent.score >= 80 ? 'bg-green-100 text-green-700' :
+                                    patent.score >= 60 ? 'bg-yellow-100 text-yellow-700' :
+                                    patent.score >= 40 ? 'bg-orange-100 text-orange-700' :
+                                    'bg-red-100 text-red-700'
+                                  }`}>
+                                    {patent.score.toFixed(1)}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-2">
+                                  <div className="flex flex-wrap gap-1">
+                                    {(patent.foundBy || []).map((source, si) => {
+                                      const badge = getFoundByBadge(source);
+                                      const matchedQuery = queryLookup[source];
+                                      return badge ? (
+                                        <span
+                                          key={si}
+                                          className={`px-1.5 py-0.5 rounded border cursor-help ${badge.color}`}
+                                          title={matchedQuery ? `Query: ${matchedQuery.substring(0, 120)}` : source}
+                                        >
+                                          {badge.label}
+                                        </span>
+                                      ) : null;
+                                    })}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Section 5 — Source Attribution Summary */}
+                <div className="border rounded-lg bg-slate-50/50 overflow-hidden">
+                  <div className="px-4 py-3 border-b bg-slate-100/80">
+                    <h3 className="text-sm font-semibold text-slate-800">Source Attribution Summary</h3>
+                  </div>
+                  <div className="px-4 py-3">
                     <div className="flex flex-wrap gap-2">
                       {(() => {
                         const sourceCounts: Record<string, number> = {};

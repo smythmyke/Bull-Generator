@@ -1,5 +1,15 @@
 {
   "projects": {
     "default": "solicitation-matcher-extension"
-  }
+  },
+  "targets": {
+    "solicitation-matcher-extension": {
+      "hosting": {
+        "default": [
+          "solicitation-matcher-extension"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }

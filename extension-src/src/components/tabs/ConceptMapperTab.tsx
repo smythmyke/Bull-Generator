@@ -8,16 +8,19 @@ import { Copy, Check, Plus, X, ChevronDown, ChevronUp, Search } from 'lucide-rea
 import { SearchResultSkeleton } from '../ui/skeleton';
 import { SearchResult } from '../SearchResult';
 import { copyToClipboard } from '../booleanSearchUtils';
-import { extractConcepts, ExtractedConcept, ConceptCategory, ConceptImportance, ProSearchMode, TerminologySwap, generateFromConcepts, GenerateFromConceptsResponse } from '../../services/apiService';
+import { extractConcepts, ExtractedConcept, ConceptCategory, ConceptImportance, TerminologySwap, generateFromConcepts, GenerateFromConceptsResponse, generateStrategySearches, StrategySearchQuery } from '../../services/apiService';
 import { buildSearchesFromConcepts, ConceptForSearch } from '../../utils/conceptSearchBuilder';
 import {
   runTripleSearch,
   runProAutoSearch,
   runProInteractiveSearch,
+  runStrategyWithDepth,
   ProSearchProgress,
   RefinementDashboardData,
   UserRefinementSelections,
 } from '../../utils/patentSearchPipeline';
+import { SearchStrategy, SearchDepth, STRATEGY_DEPTH_DEFAULTS, getStrategyCreditCost, buildTelescopingQueries, buildOnionRingQueries, buildFacetedQueries } from '../../utils/searchStrategy';
+import { mergeConcepts, MergeableConcept } from '../../utils/conceptMerger';
 import RefinementDashboard from '../RefinementDashboard';
 import { useCreditGate } from '../../hooks/useCreditGate';
 import { useCreditContext } from '../../contexts/CreditContext';
@@ -66,8 +69,15 @@ const ConceptMapperTab: React.FC = () => {
   const [newSynonymText, setNewSynonymText] = useState('');
   const isMounted = useRef(true);
 
+  // Two-tier search state
+  const [searchDepth, setSearchDepth] = useState<SearchDepth>('quick');
+  const [searchStrategy, setSearchStrategy] = useState<SearchStrategy>('telescoping');
+  const [strategyOverridden, setStrategyOverridden] = useState(false);
+  const [mergeInfo, setMergeInfo] = useState('');
+  const [strategyQueries, setStrategyQueries] = useState<StrategySearchQuery[]>([]);
+  const [isGeneratingStrategyQueries, setIsGeneratingStrategyQueries] = useState(false);
+
   // Pro search state
-  const [searchMode, setSearchMode] = useState<ProSearchMode>('quick');
   const [proSearchPhase, setProSearchPhase] = useState('');
   const [proSearchPercent, setProSearchPercent] = useState(0);
   const [proSearchMessage, setProSearchMessage] = useState('');
@@ -79,6 +89,28 @@ const ConceptMapperTab: React.FC = () => {
   const [selectedPatentIds, setSelectedPatentIds] = useState<Set<string>>(new Set());
   const [selectedCPCCodes, setSelectedCPCCodes] = useState<Set<string>>(new Set());
   const [acceptedSwapIndices, setAcceptedSwapIndices] = useState<Set<number>>(new Set());
+
+  // Auto-update strategy when depth changes (unless user overrode)
+  const handleDepthChange = useCallback((depth: SearchDepth) => {
+    setSearchDepth(depth);
+    if (!strategyOverridden) {
+      setSearchStrategy(STRATEGY_DEPTH_DEFAULTS[depth]);
+    } else if (depth === 'quick' && searchStrategy === 'faceted') {
+      // Faceted not available at quick depth — reset to default
+      setSearchStrategy(STRATEGY_DEPTH_DEFAULTS[depth]);
+      setStrategyOverridden(false);
+    }
+  }, [strategyOverridden, searchStrategy]);
+
+  const handleStrategyChange = useCallback((strategy: SearchStrategy) => {
+    setSearchStrategy(strategy);
+    setStrategyOverridden(true);
+  }, []);
+
+  const resetStrategyToAuto = useCallback(() => {
+    setStrategyOverridden(false);
+    setSearchStrategy(STRATEGY_DEPTH_DEFAULTS[searchDepth]);
+  }, [searchDepth]);
 
   // AI-generated smart searches (with proximity operators)
   const [smartSearches, setSmartSearches] = useState<GenerateFromConceptsResponse | null>(null);
@@ -147,6 +179,7 @@ const ConceptMapperTab: React.FC = () => {
     setError('');
     setConcepts([]);
     setSmartSearches(null);
+    setMergeInfo('');
 
     try {
       const response = await extractConcepts(inputText.trim());
@@ -156,9 +189,35 @@ const ConceptMapperTab: React.FC = () => {
           id: nextId(),
           enabled: true,
         }));
-        setConcepts(managed);
-        // Fire AI search generation immediately
-        regenerateSmartSearches(managed);
+
+        // Run concept merging
+        const mergeableList: MergeableConcept[] = managed.map(c => ({
+          id: c.id,
+          name: c.name,
+          category: c.category,
+          synonyms: c.synonyms,
+          importance: c.importance,
+          enabled: c.enabled,
+        }));
+        const mergeResult = mergeConcepts(mergeableList);
+
+        if (mergeResult.mergeCount > 0) {
+          // Apply merge result back to managed concepts
+          const mergedManaged: ManagedConcept[] = mergeResult.concepts.map(mc => ({
+            id: mc.id,
+            name: mc.name,
+            category: mc.category as ConceptCategory,
+            synonyms: mc.synonyms,
+            importance: mc.importance,
+            enabled: mc.enabled,
+          }));
+          setConcepts(mergedManaged);
+          setMergeInfo(`Merged ${mergeResult.mergeCount} overlapping concept${mergeResult.mergeCount > 1 ? 's' : ''}`);
+          regenerateSmartSearches(mergedManaged);
+        } else {
+          setConcepts(managed);
+          regenerateSmartSearches(managed);
+        }
       }
     } catch (err) {
       if (isMounted.current) {
@@ -274,6 +333,61 @@ const ConceptMapperTab: React.FC = () => {
             setSearchProgress('');
           }
         }, 2000);
+      }
+    });
+  };
+
+  // Strategy-based search handler
+  const handleStrategySearch = async () => {
+    if (!hasEnabledConcepts) return;
+
+    const creditCost = getStrategyCreditCost(searchDepth, searchStrategy);
+    const actionKey = `strategy-${searchDepth}-${searchStrategy}`;
+
+    await withCreditCheck(actionKey, creditCost, async () => {
+      setSearchingField(actionKey);
+      setError('');
+
+      try {
+        await runStrategyWithDepth({
+          originalParagraph: inputText.trim(),
+          concepts: conceptsForSearch,
+          strategy: searchStrategy,
+          depth: searchDepth,
+          onProgress: (progress: ProSearchProgress) => {
+            if (isMounted.current) {
+              setProSearchPhase(progress.phase);
+              setProSearchPercent(progress.percent);
+              setProSearchMessage(progress.message);
+            }
+          },
+          onPause: searchDepth === 'pro-interactive' ? (data: RefinementDashboardData) => {
+            return new Promise<UserRefinementSelections>((resolve) => {
+              if (isMounted.current) {
+                const preselectedPatents = new Set(data.patents.slice(0, 3).map((p: any) => p.patentId));
+                const preselectedCPCs = new Set(data.cpcSuggestions.slice(0, 3).map((c) => c.code));
+                setRefinementData(data);
+                setSelectedPatentIds(preselectedPatents);
+                setSelectedCPCCodes(preselectedCPCs);
+                setAcceptedSwapIndices(new Set());
+                setShowRefinementDashboard(true);
+                refinementResolveRef.current = resolve;
+              }
+            });
+          } : undefined,
+        });
+      } catch (err) {
+        if (isMounted.current) {
+          setError(err instanceof Error ? err.message : 'Strategy search failed');
+        }
+      } finally {
+        if (isMounted.current) {
+          setSearchingField(null);
+          setProSearchPhase('');
+          setProSearchPercent(0);
+          setProSearchMessage('');
+          setShowRefinementDashboard(false);
+        }
       }
     });
   };
@@ -418,7 +532,7 @@ const ConceptMapperTab: React.FC = () => {
     });
   };
 
-  const isProSearching = searchingField === 'pro-auto' || searchingField === 'pro-interactive';
+  const isProSearching = searchingField === 'pro-auto' || searchingField === 'pro-interactive' || (searchingField !== null && searchingField.startsWith('strategy-'));
 
   return (
     <div className="space-y-3">
@@ -592,25 +706,26 @@ const ConceptMapperTab: React.FC = () => {
         <InsufficientCreditsModal onDismiss={dismissPurchasePrompt} />
       )}
 
-      {/* D. Mode Selector */}
+      {/* D. Two-Tier Search Selector */}
       {hasEnabledConcepts && (
         <div className="space-y-2">
+          {/* Depth selector */}
           <div className="flex items-center justify-between">
-            <Label className="text-xs font-semibold">Search Mode</Label>
+            <Label className="text-xs font-semibold">Search Depth</Label>
             <AnimatedCreditPill />
           </div>
           <div className="grid grid-cols-3 gap-1 p-1 bg-secondary/30 rounded-lg">
             {([
-              { mode: 'quick' as ProSearchMode, label: 'Quick', desc: '3 searches' },
-              { mode: 'pro-auto' as ProSearchMode, label: 'Pro Auto', desc: '2-round AI' },
-              { mode: 'pro-interactive' as ProSearchMode, label: 'Pro Interactive', desc: '3-round guided' },
-            ]).map(({ mode, label, desc }) => (
+              { depth: 'quick' as SearchDepth, label: 'Quick', desc: `${getStrategyCreditCost('quick', searchStrategy)} credit${getStrategyCreditCost('quick', searchStrategy) > 1 ? 's' : ''}` },
+              { depth: 'pro-auto' as SearchDepth, label: 'Pro Auto', desc: `${getStrategyCreditCost('pro-auto', searchStrategy)} credits` },
+              { depth: 'pro-interactive' as SearchDepth, label: 'Pro Interactive', desc: `${getStrategyCreditCost('pro-interactive', searchStrategy)} credits` },
+            ]).map(({ depth, label, desc }) => (
               <button
-                key={mode}
-                onClick={() => setSearchMode(mode)}
+                key={depth}
+                onClick={() => handleDepthChange(depth)}
                 disabled={!!searchingField}
                 className={`px-2 py-1.5 rounded text-center transition-colors ${
-                  searchMode === mode
+                  searchDepth === depth
                     ? 'bg-primary text-primary-foreground shadow-sm'
                     : 'hover:bg-secondary/50 text-muted-foreground'
                 }`}
@@ -620,6 +735,58 @@ const ConceptMapperTab: React.FC = () => {
               </button>
             ))}
           </div>
+
+          {/* Strategy selector */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <Label className="text-xs font-semibold">Strategy</Label>
+              {!strategyOverridden && (
+                <span className="text-[9px] px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-medium">auto</span>
+              )}
+            </div>
+            {strategyOverridden && (
+              <button
+                onClick={resetStrategyToAuto}
+                className="text-[10px] text-primary hover:underline"
+              >
+                reset to auto
+              </button>
+            )}
+          </div>
+          <div className="grid grid-cols-3 gap-1 p-1 bg-secondary/30 rounded-lg">
+            {([
+              { strategy: 'telescoping' as SearchStrategy, label: 'Telescoping', desc: 'B/M/N tiers' },
+              { strategy: 'onion-ring' as SearchStrategy, label: 'Onion Ring', desc: 'Adaptive' },
+              { strategy: 'faceted' as SearchStrategy, label: 'Faceted', desc: 'Explore edges +1cr' },
+            ]).map(({ strategy, label, desc }) => {
+              const isFacetedQuick = strategy === 'faceted' && searchDepth === 'quick';
+              return (
+              <button
+                key={strategy}
+                onClick={() => handleStrategyChange(strategy)}
+                disabled={!!searchingField || isFacetedQuick}
+                title={isFacetedQuick ? 'Faceted requires Pro Auto or Pro Interactive depth' : undefined}
+                className={`px-2 py-1.5 rounded text-center transition-colors ${
+                  searchStrategy === strategy
+                    ? 'bg-primary text-primary-foreground shadow-sm'
+                    : isFacetedQuick
+                    ? 'opacity-40 cursor-not-allowed text-muted-foreground'
+                    : 'hover:bg-secondary/50 text-muted-foreground'
+                }`}
+              >
+                <div className="text-[11px] font-semibold">{label}</div>
+                <div className="text-[9px] opacity-80">{desc}</div>
+              </button>
+              );
+            })}
+          </div>
+
+          {/* Merge info badge */}
+          {mergeInfo && (
+            <div className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+              {mergeInfo}
+            </div>
+          )}
         </div>
       )}
 
@@ -656,10 +823,11 @@ const ConceptMapperTab: React.FC = () => {
         </div>
       )}
 
-      {/* F. Generated Searches (Quick mode) or Pro Search Button */}
+      {/* F. Strategy Search UI */}
       {hasEnabledConcepts && !showRefinementDashboard && (
         <div className="space-y-2">
-          {searchMode === 'quick' ? (
+          {/* Quick + Telescoping: show B/M/N preview cards */}
+          {searchDepth === 'quick' && searchStrategy === 'telescoping' ? (
             <>
               <div className="flex items-center gap-2">
                 <Label className="text-xs font-semibold">Generated Searches</Label>
@@ -709,27 +877,58 @@ const ConceptMapperTab: React.FC = () => {
                   </div>
                 );
               })}
+              {/* Run All button */}
+              <Button
+                onClick={handleStrategySearch}
+                disabled={!!searchingField || !canSearch || checkingAction !== null}
+                className="w-full h-9 text-sm font-semibold gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
+                size="sm"
+              >
+                <Search className="h-4 w-4" />
+                {searchingField?.startsWith('strategy-') ? 'Running All...' : `Run All Telescoping (${getStrategyCreditCost(searchDepth, searchStrategy)} credit)`}
+              </Button>
             </>
-          ) : searchMode === 'pro-auto' ? (
-            <Button
-              onClick={handleProAutoSearch}
-              disabled={!!searchingField || !canSearch || checkingAction !== null}
-              className="w-full h-11 text-sm font-bold gap-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
-              size="sm"
-            >
-              <Search className="h-4 w-4" />
-              {checkingAction === 'pro-auto' ? 'Checking credits...' : searchingField === 'pro-auto' ? 'Running Pro Auto...' : 'Run Pro Auto Search (2 credits)'}
-            </Button>
           ) : (
-            <Button
-              onClick={handleProInteractiveSearch}
-              disabled={!!searchingField || !canSearch || checkingAction !== null}
-              className="w-full h-11 text-sm font-bold gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700"
-              size="sm"
-            >
-              <Search className="h-4 w-4" />
-              {checkingAction === 'pro-interactive' ? 'Checking credits...' : searchingField === 'pro-interactive' ? 'Running Pro Interactive...' : 'Run Pro Interactive Search (3 credits)'}
-            </Button>
+            <>
+              {/* All other strategy+depth combos: single strategy-aware button */}
+              {(() => {
+                const creditCost = getStrategyCreditCost(searchDepth, searchStrategy);
+                const actionKey = `strategy-${searchDepth}-${searchStrategy}`;
+                const isSearching = searchingField === actionKey || searchingField?.startsWith('strategy-');
+
+                // Button style based on depth
+                const gradientClass = searchDepth === 'quick'
+                  ? 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700'
+                  : searchDepth === 'pro-auto'
+                    ? 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700'
+                    : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700';
+
+                // Strategy-specific label
+                const strategyLabel = searchStrategy === 'onion-ring' ? 'Adaptive'
+                  : searchStrategy === 'faceted' ? 'Faceted'
+                  : 'Telescoping';
+
+                const depthLabel = searchDepth === 'quick' ? 'Quick'
+                  : searchDepth === 'pro-auto' ? 'Pro Auto'
+                  : 'Pro Interactive';
+
+                return (
+                  <Button
+                    onClick={handleStrategySearch}
+                    disabled={!!searchingField || !canSearch || checkingAction !== null}
+                    className={`w-full h-11 text-sm font-bold gap-2 ${gradientClass}`}
+                    size="sm"
+                  >
+                    <Search className="h-4 w-4" />
+                    {checkingAction === actionKey
+                      ? 'Checking credits...'
+                      : isSearching
+                        ? `Running ${strategyLabel}...`
+                        : `Run ${depthLabel} ${strategyLabel} Search (${creditCost} credit${creditCost > 1 ? 's' : ''})`}
+                  </Button>
+                );
+              })()}
+            </>
           )}
         </div>
       )}
@@ -769,7 +968,7 @@ const ConceptMapperTab: React.FC = () => {
               const isPast = ['round1', 'analyzing', 'similarity', 'round2', 'round3', 'deep-scrape', 'done']
                 .indexOf(proSearchPhase) > ['round1', 'analyzing', 'similarity', 'round2', 'round3', 'deep-scrape', 'done'].indexOf(phase);
               // Hide round3 for pro-auto
-              if (phase === 'round3' && searchMode === 'pro-auto') return null;
+              if (phase === 'round3' && searchDepth === 'pro-auto') return null;
               return (
                 <span
                   key={phase}
