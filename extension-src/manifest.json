@@ -19,7 +19,7 @@
     "service_worker": "background.bundle.js",
     "type": "module"
   },
-  "permissions": ["storage", "identity", "tabs", "sidePanel", "activeTab", "scripting"],
+  "permissions": ["storage", "identity", "tabs", "sidePanel", "activeTab"],
   "host_permissions": [
     "https://*.googleapis.com/",
     "https://*.firebaseapp.com/",
@@ -37,7 +37,7 @@
     }
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; script-src-elem 'self' 'unsafe-inline' https://*.firebaseapp.com https://*.googleapis.com; connect-src 'self' https://*.googleapis.com https://*.firebaseapp.com https://identitytoolkit.googleapis.com https://*.firebaseio.com https://*.cloudfunctions.net https://*.a.run.app https://us-central1-solicitation-matcher-extension.cloudfunctions.net; object-src 'self'"
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' https://*.googleapis.com https://*.firebaseapp.com https://identitytoolkit.googleapis.com https://*.firebaseio.com https://*.cloudfunctions.net https://*.a.run.app https://us-central1-solicitation-matcher-extension.cloudfunctions.net; object-src 'self'"
   },
   "externally_connectable": {
     "matches": ["https://smythmyke.github.io/*"]

@@ -1,10 +1,8 @@
-import { getAuth } from "firebase/auth";
-import { app } from "../firebaseConfig";
+import { auth } from "../firebaseConfig";
 
 const AI_BASE_URL = "https://us-central1-solicitation-matcher-extension.cloudfunctions.net/ai";
 
 async function getAuthToken(): Promise<string> {
-  const auth = getAuth(app);
   const user = auth.currentUser;
   if (!user) {
     throw new Error("User must be logged in");

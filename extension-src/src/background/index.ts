@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, onAuthStateChanged, User } from 'firebase/auth';
+import { initializeAuth, indexedDBLocalPersistence, onAuthStateChanged, User } from 'firebase/auth/web-extension';
 
 // Types
 interface AuthState {
@@ -23,7 +23,9 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
+const auth = initializeAuth(app, {
+  persistence: [indexedDBLocalPersistence],
+});
 
 // Initialize authentication state
 let authState: AuthState = {

@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { User } from 'firebase/auth';
-import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
-import { app } from '../firebaseConfig';
+import { User, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, GoogleAuthProvider, signInWithCredential } from 'firebase/auth/web-extension';
+import { auth } from '../firebaseConfig';
 
 interface AuthContextType {
   user: User | null;
@@ -38,7 +37,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const auth = getAuth(app);
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setIsLoading(false);
@@ -53,7 +51,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       setLoading(true);
       setError(null);
-      const auth = getAuth(app);
+
       await signInWithEmailAndPassword(auth, email, password);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to sign in');
@@ -67,7 +65,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       setLoading(true);
       setError(null);
-      const auth = getAuth(app);
+
       await createUserWithEmailAndPassword(auth, email, password);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create account');
@@ -81,7 +79,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       setLoading(true);
       setError(null);
-      const auth = getAuth(app);
+
 
       const GOOGLE_CLIENT_ID = '384411888340-lc262fak0s03dtli14os1qp99veijm8q.apps.googleusercontent.com';
       const REDIRECT_URI = `https://${chrome.runtime.id}.chromiumapp.org/`;
@@ -116,7 +114,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       setLoading(true);
       setError(null);
-      const auth = getAuth(app);
+
       await signOut(auth);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to sign out');

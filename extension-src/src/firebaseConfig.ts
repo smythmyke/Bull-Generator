@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getAuth, browserLocalPersistence, setPersistence } from "firebase/auth";
+import { initializeAuth, indexedDBLocalPersistence } from "firebase/auth/web-extension";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 import { getAnalytics, isSupported } from "firebase/analytics";
@@ -18,17 +18,11 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
-// Initialize Firebase services
-const auth = getAuth(app);
-
-// Set persistence to local for Chrome extension context
-// Only set persistence if we're in a browser context
-if (typeof window !== 'undefined') {
-  setPersistence(auth, browserLocalPersistence)
-    .catch((error) => {
-      console.error("Error setting auth persistence:", error);
-    });
-}
+// Initialize Auth without popup/redirect resolver to avoid loading remote scripts
+// (apis.google.com and recaptcha) which violate MV3 remotely hosted code policy
+const auth = initializeAuth(app, {
+  persistence: [indexedDBLocalPersistence],
+});
 
 const db = getFirestore(app);
 const storage = getStorage(app);
