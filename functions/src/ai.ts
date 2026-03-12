@@ -1316,10 +1316,18 @@ interface GenerateStrategyBody {
 
 const STRATEGY_SEARCH_PROMPT = `You are a patent search expert for Google Patents. Given structured technical concepts and a search STRATEGY, generate search queries.
 
-CRITICAL RULES (apply to ALL strategies):
-- Use truncation wildcards (e.g., scan*, measur*, detect*) for single-word terms with 3+ characters
-- Quote multi-word phrases (e.g., "drill bit", "lithium ion")
-- Keep each concept's terms in separate parenthesized groups with OR
+GOOGLE PATENTS HARD LIMITS — queries that violate these will be REJECTED by Google Patents:
+- Maximum 3 AND-connected groups per query (Google Patents errors on deeply nested AND/OR)
+- Maximum 6 OR terms per parenthesized group
+- Do NOT duplicate terms as both quoted and unquoted (e.g., use "portable device" OR "handheld device", NOT portable device OR "portable device")
+- No trailing semicolons
+- Single-word terms: unquoted (with optional wildcard). Multi-word terms: quoted.
+- Total query must be concise — prefer fewer, higher-quality terms over exhaustive lists
+
+SYNTAX RULES:
+- Use truncation wildcards (e.g., scan*, measur*, detect*) for single-word terms ≥ 4 characters
+- Quote multi-word phrases ("drill bit", "lithium ion") — do NOT also include unquoted versions
+- Keep each concept's terms in one parenthesized group with OR
 - For multi-word concepts (3+ words), decompose into proximity pairs rather than exact phrases
 - Proximity operators (NEAR/x, ADJ/x, WITH, SAME) boost ranking, they do NOT filter results out
 - CL=() wraps a group to boost patents where it appears in claims — use sparingly for core novelty only
@@ -1336,21 +1344,22 @@ Return JSON matching this schema:
 STRATEGIES:
 
 TELESCOPING — Return exactly 3 queries (Broad, Moderate, Narrow):
-- Broad: AT MOST 2 concept groups, all synonyms, wildcards, AND only
-- Moderate: AT MOST 3 concept groups, 3-5 synonyms, NEAR/10 or AND per pair, wildcards
-- Narrow: AT MOST 2 concept groups, 2-3 synonyms, CL= on core novelty, ADJ/3, wildcards
+- Broad: AT MOST 2 concept groups, max 6 terms each, wildcards, AND only
+- Moderate: AT MOST 3 concept groups, 3-5 synonyms per group, NEAR/10 or AND per pair, wildcards
+- Narrow: AT MOST 2 concept groups, 2-3 synonyms per group, CL= on core novelty, ADJ/3, wildcards
 
 ONION RING — Return N layered queries, each adding one more concept group:
 - Start with the 2 highest-importance concepts (broadest layer)
 - Each subsequent layer adds the next most important concept
-- All layers use wildcards, all synonyms for each concept, AND between groups
-- The last layer includes all concepts (narrowest)
+- Maximum 5 synonyms per concept group (plus the concept name itself = 6 terms max)
+- All layers use wildcards, AND between groups
+- The last layer has AT MOST 3 concept groups (skip low-importance concepts if > 3)
 
 FACETED — Return up to 6 two-concept pair queries:
 - Generate queries from 2-concept pairs, sorted by combined importance (high×high first)
-- Each pair: (group1 all terms with wildcards) AND (group2 all terms with wildcards)
+- Each pair: (group1 max 6 terms with wildcards) AND (group2 max 6 terms with wildcards)
 - Maximum 6 pairs
-- Use broad synonym coverage with wildcards in each group`;
+- Pick the best 5 synonyms per concept, not all of them`;
 
 async function generateStrategySearches(
   body: GenerateStrategyBody

@@ -46,6 +46,116 @@ export function sanitizeForGooglePatents(query: string): string {
 }
 
 /**
+ * Google Patents has a hard limit on query nesting depth.
+ * This function enforces: max 3 AND groups, max 6 OR terms per group,
+ * and removes redundant quoted/unquoted duplicates.
+ */
+export function enforceGooglePatentsLimits(query: string): string {
+  let q = query.trim();
+
+  // Remove trailing semicolons (invalid syntax)
+  q = q.replace(/;\s*$/, "");
+
+  // Separate out CPC and CL= clauses to preserve them
+  const cpcParts: string[] = [];
+  q = q.replace(/\bcpc=[A-Z0-9/]+/gi, (match) => {
+    cpcParts.push(match);
+    return " __CPC__ ";
+  });
+
+  // Split on top-level AND / NEAR/N / ADJ/N operators (keep operator)
+  // We treat each parenthesized group as one unit
+  const andPattern = /\s+(AND|NEAR\/\d+|ADJ\/\d+)\s+/gi;
+  const parts: string[] = [];
+  const operators: string[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  // Reset regex
+  andPattern.lastIndex = 0;
+  while ((match = andPattern.exec(q)) !== null) {
+    parts.push(q.slice(lastIndex, match.index).trim());
+    operators.push(match[1]);
+    lastIndex = match.index + match[0].length;
+  }
+  parts.push(q.slice(lastIndex).trim());
+
+  // Filter out empty parts and __CPC__ placeholders
+  const realParts: { text: string; op: string }[] = [];
+  for (let i = 0; i < parts.length; i++) {
+    const cleaned = parts[i].replace(/__CPC__/g, "").trim();
+    if (!cleaned) continue;
+    realParts.push({ text: cleaned, op: i > 0 ? (operators[i - 1] || "AND") : "" });
+  }
+
+  // Limit to max 3 AND groups
+  const MAX_AND_GROUPS = 3;
+  const limitedParts = realParts.slice(0, MAX_AND_GROUPS);
+
+  // For each group, limit OR terms to 6 and deduplicate
+  const MAX_OR_TERMS = 6;
+  const processedGroups = limitedParts.map(part => {
+    let groupText = part.text;
+
+    // Check if this is a parenthesized OR group, possibly with CL= prefix
+    const clPrefix = groupText.match(/^CL=/i) ? "CL=" : "";
+    if (clPrefix) groupText = groupText.replace(/^CL=/i, "");
+
+    // Strip outer parens
+    const hasParens = groupText.startsWith("(") && groupText.endsWith(")");
+    if (hasParens) groupText = groupText.slice(1, -1);
+
+    // Split on OR
+    const orTerms = groupText.split(/\s+OR\s+/i).map(t => t.trim()).filter(Boolean);
+
+    if (orTerms.length > 1) {
+      // Deduplicate: normalize by removing quotes, then keep the best version
+      const seen = new Map<string, string>();
+      for (const term of orTerms) {
+        const normalized = term.replace(/"/g, "").toLowerCase().trim();
+        if (!seen.has(normalized)) {
+          // Prefer the quoted version for multi-word, unquoted for single-word
+          seen.set(normalized, term);
+        } else {
+          // If we already have this term, prefer quoted multi-word or wildcarded
+          const existing = seen.get(normalized)!;
+          if (term.includes("*") && !existing.includes("*")) {
+            seen.set(normalized, term);
+          }
+        }
+      }
+
+      // Take up to MAX_OR_TERMS unique terms
+      const uniqueTerms = Array.from(seen.values()).slice(0, MAX_OR_TERMS);
+
+      if (uniqueTerms.length === 1) {
+        return { ...part, text: `${clPrefix}${uniqueTerms[0]}` };
+      }
+      return { ...part, text: `${clPrefix}(${uniqueTerms.join(" OR ")})` };
+    }
+
+    // Not an OR group, return as-is (with CL= prefix restored)
+    return { ...part, text: `${clPrefix}${hasParens ? `(${groupText})` : groupText}` };
+  });
+
+  // Reassemble
+  let result = processedGroups[0]?.text || "";
+  for (let i = 1; i < processedGroups.length; i++) {
+    result += ` ${processedGroups[i].op} ${processedGroups[i].text}`;
+  }
+
+  // Re-append CPC codes
+  if (cpcParts.length > 0) {
+    result = `${result} ${cpcParts.join(" ")}`.trim();
+  }
+
+  // Final cleanup
+  result = result.replace(/\s{2,}/g, " ").trim();
+
+  return result;
+}
+
+/**
  * Enrich top N patents via BigQuery for richer claims, citations, CPC details.
  * Gracefully falls back to original data on any error.
  */
@@ -1535,6 +1645,8 @@ async function getStrategyQueries(
   concepts: ConceptForSearch[],
   strategy: SearchStrategy
 ): Promise<StrategySearchQuery[]> {
+  let queries: StrategySearchQuery[];
+
   try {
     const response = await generateStrategySearches({
       concepts: concepts.filter(c => c.enabled).map(c => ({
@@ -1547,19 +1659,26 @@ async function getStrategyQueries(
       strategy,
     });
     if (response.queries && response.queries.length > 0) {
-      return response.queries;
+      queries = response.queries;
+    } else {
+      throw new Error("Empty AI response");
     }
   } catch (err) {
     console.warn(`[PSG-Strategy] AI query generation failed, using local fallback:`, err);
+    // Local fallback
+    switch (strategy) {
+      case 'telescoping': queries = buildTelescopingQueries(concepts); break;
+      case 'onion-ring': queries = buildOnionRingQueries(concepts); break;
+      case 'faceted': queries = buildFacetedQueries(concepts); break;
+      default: queries = buildTelescopingQueries(concepts); break;
+    }
   }
 
-  // Local fallback
-  switch (strategy) {
-    case 'telescoping': return buildTelescopingQueries(concepts);
-    case 'onion-ring': return buildOnionRingQueries(concepts);
-    case 'faceted': return buildFacetedQueries(concepts);
-    default: return buildTelescopingQueries(concepts);
-  }
+  // Enforce Google Patents complexity limits on all queries
+  return queries.map(q => ({
+    ...q,
+    query: enforceGooglePatentsLimits(sanitizeForGooglePatents(q.query)),
+  }));
 }
 
 /** Single entry point for strategy + depth searches */

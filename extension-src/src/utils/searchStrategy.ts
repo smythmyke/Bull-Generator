@@ -59,10 +59,10 @@ export function buildTelescopingQueries(concepts: ConceptForSearch[]): StrategyQ
 
   const sorted = sortByImportance(enabled);
 
-  // Broad: top 2, all synonyms, AND only
+  // Broad: top 2, up to 5 synonyms, AND only
   const broadConcepts = sorted.slice(0, 2);
   const broadGroups = broadConcepts.map(c => {
-    const terms = [c.name, ...c.synonyms];
+    const terms = [c.name, ...c.synonyms.slice(0, 5)];
     return buildWildcardGroup(terms);
   });
   const broad = broadGroups.join(" AND ");
@@ -111,13 +111,14 @@ export function buildOnionRingQueries(concepts: ConceptForSearch[]): StrategyQue
   const sorted = sortByImportance(enabled);
   const queries: StrategyQuery[] = [];
 
-  // Start with 2 concepts, add one at a time
+  // Start with 2 concepts, add one at a time (max 3 AND groups for Google Patents)
   const minGroups = Math.min(2, sorted.length);
+  const maxGroups = Math.min(sorted.length, 3); // Google Patents nesting limit
 
-  for (let count = minGroups; count <= sorted.length; count++) {
+  for (let count = minGroups; count <= maxGroups; count++) {
     const subset = sorted.slice(0, count);
     const groups = subset.map(c => {
-      const terms = [c.name, ...c.synonyms.slice(0, 4)];
+      const terms = [c.name, ...c.synonyms.slice(0, 5)];
       return buildWildcardGroup(terms);
     });
     const query = groups.join(" AND ");
@@ -159,13 +160,14 @@ export function buildFacetedQueries(concepts: ConceptForSearch[]): StrategyQuery
   const sorted = sortByImportance(enabled);
   const queries: StrategyQuery[] = [];
 
-  // 1. Anchor query: all enabled concepts ANDed
-  const anchorGroups = sorted.map(c => {
-    const terms = [c.name, ...c.synonyms.slice(0, 4)];
+  // 1. Anchor query: top 3 concepts ANDed (Google Patents max nesting)
+  const anchorConcepts = sorted.slice(0, 3);
+  const anchorGroups = anchorConcepts.map(c => {
+    const terms = [c.name, ...c.synonyms.slice(0, 5)];
     return buildWildcardGroup(terms);
   });
   queries.push({
-    label: "Anchor (all concepts)",
+    label: "Anchor (top concepts)",
     query: anchorGroups.join(" AND "),
   });
 
@@ -175,11 +177,11 @@ export function buildFacetedQueries(concepts: ConceptForSearch[]): StrategyQuery
 
   for (let i = 0; i < maxDrops && queries.length < FACETED_MAX_QUERIES; i++) {
     const dropped = reverseSorted[i];
-    const remaining = sorted.filter(c => c.name !== dropped.name);
+    const remaining = sorted.filter(c => c.name !== dropped.name).slice(0, 3); // max 3 AND groups
     if (remaining.length === 0) continue;
 
     const groups = remaining.map(c => {
-      const terms = [c.name, ...c.synonyms.slice(0, 4)];
+      const terms = [c.name, ...c.synonyms.slice(0, 5)];
       return buildWildcardGroup(terms);
     });
     queries.push({
@@ -228,7 +230,7 @@ export function buildFacetedQueries(concepts: ConceptForSearch[]): StrategyQuery
       if (isDuplicate) continue;
 
       const groups = triplet.concepts.map(c => {
-        const terms = [c.name, ...c.synonyms.slice(0, 4)];
+        const terms = [c.name, ...c.synonyms.slice(0, 5)];
         return buildWildcardGroup(terms);
       });
       queries.push({

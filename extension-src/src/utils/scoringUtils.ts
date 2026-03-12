@@ -7,6 +7,7 @@ export interface ScoreBreakdown {
   titleHits: number;
   proximity: number;
   coverage: number;
+  conceptCoverage: number;
   claimPresence: number;
   aiSemantic: number;
   multiSource: number;
@@ -201,12 +202,44 @@ export function scoreClaimPresence(
 }
 
 /**
- * Multi-source bonus: 1 source=0, 2=50, 3+=100.
+ * Graduated multi-source score based on ratio of queries the patent appeared in.
+ * More appearances across independent queries = stronger relevance signal.
  */
-export function scoreMultiSource(foundBy: string[]): number {
+export function scoreMultiSource(foundBy: string[], totalQueries?: number): number {
   if (!foundBy || foundBy.length <= 1) return 0;
-  if (foundBy.length === 2) return 50;
+  if (totalQueries && totalQueries > 1) {
+    return Math.min(100, Math.round((foundBy.length / totalQueries) * 100));
+  }
+  // Fallback when total queries unknown
+  if (foundBy.length === 2) return 40;
+  if (foundBy.length === 3) return 65;
+  if (foundBy.length === 4) return 80;
   return 100;
+}
+
+/**
+ * Concept coverage: what percentage of the user's original concepts
+ * have at least one stem match in the patent text (abstract + claim 1).
+ * Rewards breadth — a patent covering 5/5 concepts is stronger prior art.
+ */
+export function scoreConceptCoverage(
+  concepts: { name: string; synonyms: string[] }[],
+  text: string
+): number {
+  if (!concepts || concepts.length === 0 || !text) return 0;
+
+  const textStemSet = new Set(stemTokens(tokenize(text)));
+  let matched = 0;
+
+  for (const concept of concepts) {
+    // Concept is "covered" if name or any synonym has a stem match
+    const allTerms = [concept.name, ...concept.synonyms];
+    const conceptStems = allTerms.flatMap(t => stemTokens(tokenize(t)));
+    const hit = conceptStems.some(stem => textStemSet.has(stem));
+    if (hit) matched++;
+  }
+
+  return Math.round((matched / concepts.length) * 100);
 }
 
 /**
@@ -225,13 +258,14 @@ export function scoreCPCRelevance(_cpcCodes: string[], backwardCitationCount?: n
 // ── Weights ──
 
 const WEIGHTS = {
-  termFrequency: 0.15,
+  termFrequency: 0.10,
   titleHits: 0.15,
-  proximity: 0.10,
-  coverage: 0.15,
+  proximity: 0.05,
+  coverage: 0.10,
+  conceptCoverage: 0.10,
   claimPresence: 0.10,
-  aiSemantic: 0.25,
-  multiSource: 0.05,
+  aiSemantic: 0.20,
+  multiSource: 0.15,
   cpcRelevance: 0.05,
 };
 
@@ -248,8 +282,10 @@ export function computeHybridScore(params: {
   aiSemanticScore: number;
   backwardCitationCount?: number;
   independentClaims?: { claimNumber: number; text: string }[];
+  concepts?: { name: string; synonyms: string[] }[];
+  totalQueries?: number;
 }): ScoreBreakdown {
-  const { terms, title, abstract, firstClaim, foundBy, cpcCodes, aiSemanticScore, backwardCitationCount, independentClaims } = params;
+  const { terms, title, abstract, firstClaim, foundBy, cpcCodes, aiSemanticScore, backwardCitationCount, independentClaims, concepts, totalQueries } = params;
 
   const fullText = [abstract, firstClaim].filter(Boolean).join(' ');
 
@@ -257,8 +293,9 @@ export function computeHybridScore(params: {
   const th = scoreTitleHits(terms, title);
   const prox = scoreProximity(terms, fullText);
   const cov = scoreCoverage(terms, fullText);
+  const cc = concepts ? scoreConceptCoverage(concepts, fullText) : 0;
   const claim = scoreClaimPresence(terms, abstract, firstClaim, independentClaims);
-  const ms = scoreMultiSource(foundBy);
+  const ms = scoreMultiSource(foundBy, totalQueries);
   const cpc = scoreCPCRelevance(cpcCodes, backwardCitationCount);
 
   const final = Math.round(
@@ -266,6 +303,7 @@ export function computeHybridScore(params: {
     th * WEIGHTS.titleHits +
     prox * WEIGHTS.proximity +
     cov * WEIGHTS.coverage +
+    cc * WEIGHTS.conceptCoverage +
     claim * WEIGHTS.claimPresence +
     aiSemanticScore * WEIGHTS.aiSemantic +
     ms * WEIGHTS.multiSource +
@@ -277,6 +315,7 @@ export function computeHybridScore(params: {
     titleHits: th,
     proximity: prox,
     coverage: cov,
+    conceptCoverage: cc,
     claimPresence: claim,
     aiSemantic: aiSemanticScore,
     multiSource: ms,

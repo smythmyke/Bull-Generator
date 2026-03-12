@@ -284,6 +284,8 @@ const ResultsPage: React.FC = () => {
             aiSemanticScore: aiScore,
             backwardCitationCount: patent.backwardCitationCount,
             independentClaims: patent.independentClaims,
+            concepts: data.concepts?.map(c => ({ name: c.name, synonyms: c.synonyms })),
+            totalQueries: data.searchMeta?.searchLog?.length,
           });
 
           return {

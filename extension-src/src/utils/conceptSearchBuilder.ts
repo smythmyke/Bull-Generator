@@ -34,9 +34,9 @@ export function buildSearchesFromConcepts(
     return { broad: "", moderate: "", narrow: "" };
   }
 
-  // Broad: name + all synonyms per concept
+  // Broad: name + up to 5 synonyms per concept (Google Patents nesting limit)
   const broadGroups = enabled.map((c) => {
-    const terms = [c.name, ...c.synonyms];
+    const terms = [c.name, ...c.synonyms.slice(0, 5)];
     return buildGroup(terms);
   });
 

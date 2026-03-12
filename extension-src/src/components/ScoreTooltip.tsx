@@ -9,13 +9,14 @@ interface ScoreTooltipProps {
 }
 
 const SIGNAL_LABELS: { key: keyof Omit<ScoreBreakdown, 'final'>; label: string; weight: number }[] = [
-  { key: 'aiSemantic', label: 'AI Semantic', weight: 25 },
-  { key: 'termFrequency', label: 'Term Frequency', weight: 15 },
+  { key: 'aiSemantic', label: 'AI Semantic', weight: 20 },
+  { key: 'multiSource', label: 'Multi-Source', weight: 15 },
   { key: 'titleHits', label: 'Title Hits', weight: 15 },
-  { key: 'coverage', label: 'Coverage', weight: 15 },
-  { key: 'proximity', label: 'Proximity', weight: 10 },
+  { key: 'termFrequency', label: 'Term Frequency', weight: 10 },
+  { key: 'coverage', label: 'Term Coverage', weight: 10 },
+  { key: 'conceptCoverage', label: 'Concept Coverage', weight: 10 },
   { key: 'claimPresence', label: 'Claim Presence', weight: 10 },
-  { key: 'multiSource', label: 'Multi-Source', weight: 5 },
+  { key: 'proximity', label: 'Proximity', weight: 5 },
   { key: 'cpcRelevance', label: 'CPC Relevance', weight: 5 },
 ];
 
