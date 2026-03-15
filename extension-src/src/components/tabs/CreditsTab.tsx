@@ -3,8 +3,6 @@ import { useCreditContext } from '../../contexts/CreditContext';
 import { getPurchaseHistory, PurchaseRecord } from '../../services/creditService';
 import { Button } from '../ui/button';
 
-const FREE_DAILY_LIMIT = 5;
-
 const PACKS = [
   { id: 'pack_10', credits: 10, price: '$2.00', perCredit: '$0.20', badge: null },
   { id: 'pack_25', credits: 25, price: '$4.50', perCredit: '$0.18', badge: 'Most Popular' as const },
@@ -52,38 +50,22 @@ const CreditsTab: React.FC = () => {
     }
   };
 
-  const totalAvailable = credits
-    ? credits.freeSearchesRemaining + credits.balance
-    : 0;
+  const balance = credits?.balance ?? 0;
 
-  const availableColor = totalAvailable >= 3
+  const availableColor = balance >= 3
     ? 'text-green-700'
-    : totalAvailable >= 1
+    : balance >= 1
       ? 'text-yellow-700'
       : 'text-red-700';
-
-  const freeUsed = credits?.freeSearchesUsed ?? 0;
-  const freePercent = (freeUsed / FREE_DAILY_LIMIT) * 100;
 
   return (
     <div className="space-y-4">
       {/* A. Balance Overview */}
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-2 gap-2">
         <div className="border rounded-lg p-2 text-center">
           <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Available</div>
-          <div className={`text-xl font-bold ${availableColor}`}>{totalAvailable}</div>
-          <div className="text-[10px] text-muted-foreground">searches</div>
-        </div>
-        <div className="border rounded-lg p-2 text-center">
-          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Free Today</div>
-          <div className="text-xl font-bold">{credits?.freeSearchesRemaining ?? FREE_DAILY_LIMIT}</div>
-          <div className="text-[10px] text-muted-foreground">/ {FREE_DAILY_LIMIT}</div>
-          <div className="mt-1 h-1 bg-secondary rounded-full overflow-hidden">
-            <div
-              className="h-full bg-primary rounded-full transition-all"
-              style={{ width: `${100 - freePercent}%` }}
-            />
-          </div>
+          <div className={`text-xl font-bold ${availableColor}`}>{balance}</div>
+          <div className="text-[10px] text-muted-foreground">credits</div>
         </div>
         <div className="border rounded-lg p-2 text-center">
           <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Total Used</div>
@@ -107,9 +89,9 @@ const CreditsTab: React.FC = () => {
                 </span>
               )}
               <div className="text-lg font-bold">{pack.credits}</div>
-              <div className="text-xs text-muted-foreground">searches</div>
+              <div className="text-xs text-muted-foreground">credits</div>
               <div className="text-sm font-semibold text-primary">{pack.price}</div>
-              <div className="text-[10px] text-muted-foreground">{pack.perCredit}/search</div>
+              <div className="text-[10px] text-muted-foreground">{pack.perCredit}/credit</div>
               <Button
                 size="sm"
                 className="w-full h-7 text-xs"

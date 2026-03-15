@@ -2,7 +2,6 @@ import { initializeApp } from "firebase/app";
 import { initializeAuth, indexedDBLocalPersistence } from "firebase/auth/web-extension";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
-import { getAnalytics, isSupported } from "firebase/analytics";
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
@@ -27,22 +26,9 @@ const auth = initializeAuth(app, {
 const db = getFirestore(app);
 const storage = getStorage(app);
 
-// Initialize Analytics only if supported (not available in extension context)
-let analytics = null;
-if (typeof window !== 'undefined') {
-  isSupported().then(yes => {
-    if (yes) {
-      analytics = getAnalytics(app);
-    }
-  }).catch(err => {
-    console.error("Firebase Analytics initialization error:", err);
-  });
-}
-
-export { 
+export {
   app,    // Base Firebase app instance
   auth,   // Authentication
   db,     // Firestore database
   storage, // Storage
-  analytics // Analytics (may be null in extension context)
 };

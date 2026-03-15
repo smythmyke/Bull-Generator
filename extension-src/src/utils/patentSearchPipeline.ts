@@ -3,11 +3,23 @@ import { ConceptForSearch, buildGroup } from "./conceptSearchBuilder";
 import { buildTelescopingQueries, buildOnionRingQueries, buildFacetedQueries } from "./searchStrategy";
 import { mergeConcepts, MergeableConcept, MergeResult } from "./conceptMerger";
 
+/** Thrown when Google Patents is unavailable (503, error pages, etc.) */
+export class GoogleUnavailableError extends Error {
+  queries: { label: string; query: string }[];
+  creditsUsed: number;
+  constructor(message: string, queries: { label: string; query: string }[], creditsUsed: number) {
+    super(message);
+    this.name = "GoogleUnavailableError";
+    this.queries = queries;
+    this.creditsUsed = creditsUsed;
+  }
+}
+
 /**
  * Convert an Orbit/Quartet-syntax boolean query to Google Patents-compatible syntax.
- * Strips: field prefixes (FT=, TAC=, AB=, etc.), country codes (AND CC=XX).
- * Preserves: truncation wildcards (*), NEAR/N proximity, CL= claims prefix.
- * Converts: nD (Orbit proximity) → NEAR/N (Google Patents proximity).
+ * Strips: field prefixes (FT=, TAC=, AB=, CL=, etc.), country codes (AND CC=XX).
+ * Converts: NEAR/N, ADJ/N, nD, WITH, SAME → AND (Google Patents doesn't support proximity).
+ * Preserves: truncation wildcards (*), AND, OR operators.
  */
 export function sanitizeForGooglePatents(query: string): string {
   let q = query;
@@ -19,17 +31,17 @@ export function sanitizeForGooglePatents(query: string): string {
     return "";
   });
 
-  // Remove field prefixes EXCEPT CL= (claims search) which Google Patents supports
-  q = q.replace(/\b(?:FT|TAC|AB|TI|CA)\s*=/gi, "");
+  // Remove ALL field prefixes — Google Patents doesn't support any of them
+  q = q.replace(/\b(?:FT|TAC|AB|TI|CA|CL)\s*=/gi, "");
 
   // Remove country code clause: AND CC=XX (with optional parens/spaces)
   q = q.replace(/\s+AND\s+CC\s*=\s*[A-Z]{2}/gi, "");
 
-  // Preserve truncation wildcards (word*) — Google Patents supports them
+  // Convert proximity operators to AND — Google Patents doesn't support them
+  q = q.replace(/\s+(NEAR\/\d+|ADJ\/\d+|WITH|SAME)\s+/gi, " AND ");
 
-  // Preserve NEAR/N as-is — Google Patents supports proximity operators
-  // Convert Orbit nD proximity → NEAR/N (Google Patents equivalent)
-  q = q.replace(/\b(\d+)D\b/gi, (_match, n) => `NEAR/${n}`);
+  // Convert Orbit nD proximity → AND
+  q = q.replace(/\s+\d+D\s+/gi, " AND ");
 
   // Clean up double spaces and stray parens
   q = q.replace(/\(\s*\)/g, "");
@@ -46,9 +58,11 @@ export function sanitizeForGooglePatents(query: string): string {
 }
 
 /**
- * Google Patents has a hard limit on query nesting depth.
- * This function enforces: max 3 AND groups, max 6 OR terms per group,
+ * Google Patents has a hard limit on query complexity.
+ * Enforces: max 3 AND groups, max 6 TOTAL OR operators across the entire query,
  * and removes redundant quoted/unquoted duplicates.
+ * Google Patents does NOT support: NEAR/N, ADJ/N, WITH, SAME, CL=, or other
+ * Orbit/Questel syntax — sanitizeForGooglePatents() should be called first.
  */
 export function enforceGooglePatentsLimits(query: string): string {
   let q = query.trim();
@@ -56,26 +70,24 @@ export function enforceGooglePatentsLimits(query: string): string {
   // Remove trailing semicolons (invalid syntax)
   q = q.replace(/;\s*$/, "");
 
-  // Separate out CPC and CL= clauses to preserve them
+  // Separate out CPC clauses to preserve them
   const cpcParts: string[] = [];
   q = q.replace(/\bcpc=[A-Z0-9/]+/gi, (match) => {
     cpcParts.push(match);
     return " __CPC__ ";
   });
 
-  // Split on top-level AND / NEAR/N / ADJ/N operators (keep operator)
-  // We treat each parenthesized group as one unit
-  const andPattern = /\s+(AND|NEAR\/\d+|ADJ\/\d+)\s+/gi;
+  // Split on top-level AND operators
+  const andPattern = /\s+AND\s+/gi;
   const parts: string[] = [];
   const operators: string[] = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
-  // Reset regex
   andPattern.lastIndex = 0;
   while ((match = andPattern.exec(q)) !== null) {
     parts.push(q.slice(lastIndex, match.index).trim());
-    operators.push(match[1]);
+    operators.push("AND");
     lastIndex = match.index + match[0].length;
   }
   parts.push(q.slice(lastIndex).trim());
@@ -90,16 +102,22 @@ export function enforceGooglePatentsLimits(query: string): string {
 
   // Limit to max 3 AND groups
   const MAX_AND_GROUPS = 3;
+  const MAX_TOTAL_OR = 6; // Google Patents budget for total OR operators across the query
+
+  console.log(`[PSG-Enforcer] Input groups: ${realParts.length}`);
+  realParts.forEach((p, i) => {
+    const orCount = (p.text.match(/\sOR\s/gi) || []).length;
+    console.log(`[PSG-Enforcer]   group[${i}]: ${orCount} ORs, text="${p.text.substring(0, 80)}${p.text.length > 80 ? '...' : ''}"`);
+  });
+
+  if (realParts.length > MAX_AND_GROUPS) {
+    console.warn(`[PSG-Enforcer] Trimming from ${realParts.length} to ${MAX_AND_GROUPS} AND groups`);
+  }
   const limitedParts = realParts.slice(0, MAX_AND_GROUPS);
 
-  // For each group, limit OR terms to 6 and deduplicate
-  const MAX_OR_TERMS = 6;
+  // Process each group: deduplicate OR terms
   const processedGroups = limitedParts.map(part => {
     let groupText = part.text;
-
-    // Check if this is a parenthesized OR group, possibly with CL= prefix
-    const clPrefix = groupText.match(/^CL=/i) ? "CL=" : "";
-    if (clPrefix) groupText = groupText.replace(/^CL=/i, "");
 
     // Strip outer parens
     const hasParens = groupText.startsWith("(") && groupText.endsWith(")");
@@ -114,34 +132,50 @@ export function enforceGooglePatentsLimits(query: string): string {
       for (const term of orTerms) {
         const normalized = term.replace(/"/g, "").toLowerCase().trim();
         if (!seen.has(normalized)) {
-          // Prefer the quoted version for multi-word, unquoted for single-word
           seen.set(normalized, term);
         } else {
-          // If we already have this term, prefer quoted multi-word or wildcarded
           const existing = seen.get(normalized)!;
           if (term.includes("*") && !existing.includes("*")) {
             seen.set(normalized, term);
           }
         }
       }
-
-      // Take up to MAX_OR_TERMS unique terms
-      const uniqueTerms = Array.from(seen.values()).slice(0, MAX_OR_TERMS);
-
-      if (uniqueTerms.length === 1) {
-        return { ...part, text: `${clPrefix}${uniqueTerms[0]}` };
-      }
-      return { ...part, text: `${clPrefix}(${uniqueTerms.join(" OR ")})` };
+      return { ...part, terms: Array.from(seen.values()) };
     }
 
-    // Not an OR group, return as-is (with CL= prefix restored)
-    return { ...part, text: `${clPrefix}${hasParens ? `(${groupText})` : groupText}` };
+    // Not an OR group — single term
+    return { ...part, terms: [hasParens ? `(${groupText})` : groupText] };
   });
 
-  // Reassemble
-  let result = processedGroups[0]?.text || "";
-  for (let i = 1; i < processedGroups.length; i++) {
-    result += ` ${processedGroups[i].op} ${processedGroups[i].text}`;
+  // Enforce total OR budget: distribute OR slots across groups
+  let totalOrTerms = processedGroups.reduce((sum, g) => sum + g.terms.length, 0);
+  const totalOrOps = totalOrTerms - processedGroups.length; // each group uses (terms-1) OR operators
+
+  if (totalOrOps > MAX_TOTAL_OR) {
+    console.warn(`[PSG-Enforcer] Total OR operators: ${totalOrOps}, exceeds budget of ${MAX_TOTAL_OR}. Trimming terms.`);
+
+    // Distribute OR budget proportionally across groups
+    const numGroups = processedGroups.length;
+    // Each group gets at least 1 term, remaining OR budget distributed evenly
+    const maxTermsPerGroup = Math.max(2, Math.floor((MAX_TOTAL_OR + numGroups) / numGroups));
+
+    for (const group of processedGroups) {
+      if (group.terms.length > maxTermsPerGroup) {
+        console.log(`[PSG-Enforcer]   Trimming group from ${group.terms.length} to ${maxTermsPerGroup} terms`);
+        group.terms = group.terms.slice(0, maxTermsPerGroup);
+      }
+    }
+  }
+
+  // Reassemble groups
+  const assembledGroups = processedGroups.map(g => {
+    if (g.terms.length === 1) return { ...g, text: g.terms[0] };
+    return { ...g, text: `(${g.terms.join(" OR ")})` };
+  });
+
+  let result = assembledGroups[0]?.text || "";
+  for (let i = 1; i < assembledGroups.length; i++) {
+    result += ` AND ${assembledGroups[i].text}`;
   }
 
   // Re-append CPC codes
@@ -152,6 +186,11 @@ export function enforceGooglePatentsLimits(query: string): string {
   // Final cleanup
   result = result.replace(/\s{2,}/g, " ").trim();
 
+  // Count final structure for diagnostics
+  const finalAndCount = (result.match(/\sAND\s/gi) || []).length + 1;
+  const finalOrCount = (result.match(/\sOR\s/gi) || []).length;
+  console.log(`[PSG-Enforcer] Output: ${finalAndCount} groups, ${finalOrCount} total OR operators, len=${result.length}ch`);
+
   return result;
 }
 
@@ -161,7 +200,7 @@ export function enforceGooglePatentsLimits(query: string): string {
  */
 async function bigQueryEnrichTopN(
   patents: any[],
-  topN = 10,
+  topN = 25,
   onProgress?: ((msg: string) => void) | ((progress: { phase: string; message: string; percent: number }) => void)
 ): Promise<any[]> {
   try {
@@ -224,7 +263,7 @@ async function bigQueryEnrichTopN(
       merged.cpcDetails = enrichment.cpcDetails;
       merged.familyId = enrichment.familyId;
       merged.entityStatus = enrichment.entityStatus;
-      merged.enrichedVia = "bigquery";
+      merged.enrichedVia = enrichment.enrichedVia || "google-patents";
 
       // Upgrade firstClaim to first independent claim text (backward compat)
       if (enrichment.independentClaims.length > 0) {
@@ -311,19 +350,27 @@ export async function verifyTab(tabId: number, label: string): Promise<boolean> 
 }
 
 /** Run a single search on Google Patents and scrape results */
-export async function runSingleSearch(
+export interface SingleSearchResult {
+  results: any[];
+  googleUnavailable: boolean;
+  reason?: string;
+}
+
+/** Full single search returning results + Google availability status */
+async function runSingleSearchFull(
   tabId: number,
   query: string,
-  limit: number = 25
-): Promise<any[]> {
+  limit: number = 35
+): Promise<SingleSearchResult> {
   const searchLabel = query.substring(0, 60) + (query.length > 60 ? "..." : "");
   console.log(`[PSG] runSingleSearch: START query="${searchLabel}", tabId=${tabId}, limit=${limit}`);
+  console.log(`[PSG] runSingleSearch: FULL QUERY (${query.length}ch): ${query}`);
 
   // Verify tab is still valid before sending message
   const tabValid = await verifyTab(tabId, "pre-search");
   if (!tabValid) {
     console.error("[PSG] runSingleSearch: tab invalid before search, aborting");
-    return [];
+    return { results: [], googleUnavailable: false };
   }
 
   // Trigger search
@@ -333,7 +380,7 @@ export async function runSingleSearch(
     console.log(`[PSG] runSingleSearch: SEARCH_PATENTS response:`, searchResponse);
   } catch (err) {
     console.error(`[PSG] runSingleSearch: SEARCH_PATENTS message FAILED:`, err);
-    return [];
+    return { results: [], googleUnavailable: false };
   }
 
   // Wait for results page to load
@@ -368,13 +415,16 @@ export async function runSingleSearch(
   const tabStillValid = await verifyTab(tabId, "post-navigation");
   if (!tabStillValid) {
     console.error("[PSG] runSingleSearch: tab invalid after navigation, aborting");
-    return [];
+    return { results: [], googleUnavailable: false };
   }
 
   // Poll for results immediately — no hard sleep, use short interval then back off
   let attempts = 0;
   const maxAttempts = 20;
   console.log(`[PSG] runSingleSearch: starting poll (max ${maxAttempts} attempts, adaptive interval)...`);
+
+  let googleUnavailable = false;
+  let unavailableReason = "";
 
   const poll = async (): Promise<any[]> => {
     attempts++;
@@ -388,6 +438,12 @@ export async function runSingleSearch(
           `[PSG] runSingleSearch: SUCCESS - scraped ${response.count} results after ${attempts} attempts`
         );
         return response.results;
+      }
+      if (response?.status === "google-unavailable") {
+        console.error(`[PSG] runSingleSearch: Google Patents unavailable: ${response.reason}`);
+        googleUnavailable = true;
+        unavailableReason = response.reason || "Google Patents is temporarily unavailable";
+        return [];
       }
       if (response?.status === "error") {
         console.error(`[PSG] runSingleSearch: poll #${attempts} SCRAPE error:`, response.error);
@@ -409,7 +465,20 @@ export async function runSingleSearch(
 
   const results = await poll();
   console.log(`[PSG] runSingleSearch: END - returning ${results.length} results for query="${searchLabel}"`);
-  return results;
+  return { results, googleUnavailable, reason: unavailableReason };
+}
+
+/**
+ * Public runSingleSearch — returns just the results array for most callers.
+ * Use runSingleSearchFull() internally when you need Google availability status.
+ */
+export async function runSingleSearch(
+  tabId: number,
+  query: string,
+  limit: number = 35
+): Promise<any[]> {
+  const result = await runSingleSearchFull(tabId, query, limit);
+  return result.results;
 }
 
 export interface TripleSearchParams {
@@ -454,7 +523,7 @@ export async function runTripleSearch(params: TripleSearchParams): Promise<void>
   onProgress?.("Search 1/3: User's raw text...");
 
   const optimizeStart = Date.now();
-  const [optimizedResult, search1Results] = await Promise.all([
+  const [optimizedResult, search1] = await Promise.all([
     optimizeQuery(rawText)
       .then((r) => {
         console.log(
@@ -466,11 +535,15 @@ export async function runTripleSearch(params: TripleSearchParams): Promise<void>
         console.error(`[PSG] Step 1: AI optimization FAILED (${Date.now() - optimizeStart}ms):`, err);
         return { optimizedQuery: "", reasoning: "" };
       }),
-    runSingleSearch(tabId, rawText, 25),
+    runSingleSearchFull(tabId, rawText, 35),
   ]);
-  const search1Count = search1Results.length;
+  const search1Count = search1.results.length;
   console.log(`[PSG] Step 1 COMPLETE: ${search1Count} results from raw text search`);
   searchLog.push({ round: 1, label: "Raw text", query: rawText, resultCount: search1Count, durationMs: Date.now() - optimizeStart });
+
+  // Track Google unavailability across all searches
+  let googleUnavailableCount = 0;
+  if (search1.googleUnavailable) googleUnavailableCount++;
 
   // Verify tab before search 2
   const tabOkForSearch2 = await verifyTab(tabId, "between-search-1-and-2");
@@ -485,13 +558,14 @@ export async function runTripleSearch(params: TripleSearchParams): Promise<void>
   console.log(`[PSG] Step 2: sanitized="${gpBooleanQuery.substring(0, 100)}..."`);
   onProgress?.(`Search 2/3: Boolean query... (${search1Count} from search 1)`);
   const s2Start = Date.now();
-  const search2Results = await runSingleSearch(tabId, gpBooleanQuery, 25);
-  const search2Count = search2Results.length;
+  const search2 = await runSingleSearchFull(tabId, gpBooleanQuery, 35);
+  const search2Count = search2.results.length;
   console.log(`[PSG] Step 2 COMPLETE: ${search2Count} results from boolean search`);
   searchLog.push({ round: 1, label: "Boolean", query: gpBooleanQuery, resultCount: search2Count, durationMs: Date.now() - s2Start });
+  if (search2.googleUnavailable) googleUnavailableCount++;
 
   // Step 3: AI-optimized query
-  let search3Results: any[] = [];
+  let search3: SingleSearchResult = { results: [], googleUnavailable: false };
   let search3Count = 0;
   if (optimizedResult.optimizedQuery) {
     const tabOkForSearch3 = await verifyTab(tabId, "between-search-2-and-3");
@@ -504,14 +578,32 @@ export async function runTripleSearch(params: TripleSearchParams): Promise<void>
     );
     onProgress?.(`Search 3/3: AI-optimized query... (${search1Count + search2Count} so far)`);
     const s3Start = Date.now();
-    search3Results = await runSingleSearch(tabId, optimizedResult.optimizedQuery, 25);
-    search3Count = search3Results.length;
+    search3 = await runSingleSearchFull(tabId, optimizedResult.optimizedQuery, 35);
+    search3Count = search3.results.length;
     console.log(`[PSG] Step 3 COMPLETE: ${search3Count} results from AI-optimized search`);
     searchLog.push({ round: 1, label: "AI-optimized", query: optimizedResult.optimizedQuery, resultCount: search3Count, durationMs: Date.now() - s3Start });
+    if (search3.googleUnavailable) googleUnavailableCount++;
   } else {
     console.warn("[PSG] Step 3: SKIPPED (no AI-optimized query available)");
     onProgress?.("Search 3/3: Skipped (optimization failed)");
     searchLog.push({ round: 1, label: "AI-optimized", query: "(skipped — optimization failed)", resultCount: 0 });
+  }
+
+  // Check if Google Patents was unavailable for all searches
+  const totalSearches = optimizedResult.optimizedQuery ? 3 : 2;
+  if (googleUnavailableCount >= totalSearches) {
+    const queries = [
+      { label: "Raw Text", query: rawText },
+      { label: "Boolean", query: gpBooleanQuery },
+    ];
+    if (optimizedResult.optimizedQuery) {
+      queries.push({ label: "AI-Optimized", query: optimizedResult.optimizedQuery });
+    }
+    throw new GoogleUnavailableError(
+      "Google Patents is temporarily unavailable. Your generated queries are shown below.",
+      queries,
+      1 // 1 credit used for the optimizeQuery AI call
+    );
   }
 
   // Step 4: Deduplicate by patentId and track sources
@@ -539,9 +631,9 @@ export async function runTripleSearch(params: TripleSearchParams): Promise<void>
     console.log(`[PSG] Step 4: ${source} -> ${added} new, ${merged} merged`);
   };
 
-  addResults(search1Results, "raw-text");
-  addResults(search2Results, "boolean");
-  addResults(search3Results, "ai-optimized");
+  addResults(search1.results, "raw-text");
+  addResults(search2.results, "boolean");
+  addResults(search3.results, "ai-optimized");
 
   const uniquePatents = Array.from(patentMap.values());
   const totalFound = search1Count + search2Count + search3Count;
@@ -647,7 +739,7 @@ export async function runTripleSearch(params: TripleSearchParams): Promise<void>
 
   // Step 5b: BigQuery enrichment for top N
   onProgress?.("Enriching top results with detailed patent data...");
-  const bqEnrichedPatents = await bigQueryEnrichTopN(allPatents, 10, onProgress);
+  const bqEnrichedPatents = await bigQueryEnrichTopN(allPatents, 25, onProgress);
 
   // Step 6: Store results and open results page
   console.log("[PSG] Step 6: Storing results and opening results page...");
@@ -1018,7 +1110,7 @@ export async function runProAutoSearch(params: ProAutoSearchParams): Promise<voi
     optimizeQuery(smartRawText)
       .then((r) => { console.log(`[PSG-Pro] AI optimization done: "${r.optimizedQuery?.substring(0, 80)}..."`); return r; })
       .catch((err) => { console.error("[PSG-Pro] AI optimization failed:", err); return { optimizedQuery: "", reasoning: "" }; }),
-    runSingleSearch(tabId, smartRawText, 25),
+    runSingleSearch(tabId, smartRawText, 35),
   ]);
   console.log(`[PSG-Pro] Round 1 raw text: ${rawTextResults.length} results`);
   searchLog.push({ round: 1, label: "Raw text", query: smartRawText, resultCount: rawTextResults.length, durationMs: Date.now() - r1RawStart });
@@ -1051,7 +1143,7 @@ export async function runProAutoSearch(params: ProAutoSearchParams): Promise<voi
     const tabOkAI = await verifyTab(tabId, "pre-round1-ai");
     if (tabOkAI) {
       const r1AiStart = Date.now();
-      aiResults = await runSingleSearch(tabId, optimizedResult.optimizedQuery, 25);
+      aiResults = await runSingleSearch(tabId, optimizedResult.optimizedQuery, 35);
       console.log(`[PSG-Pro] Round 1 AI-optimized: ${aiResults.length} results`);
       searchLog.push({ round: 1, label: "AI-optimized", query: optimizedResult.optimizedQuery, resultCount: aiResults.length, durationMs: Date.now() - r1AiStart });
     }
@@ -1101,7 +1193,7 @@ export async function runProAutoSearch(params: ProAutoSearchParams): Promise<voi
       roundNumber: 1,
       originalParagraph,
     });
-    topPatentIds = analysisResult.topPatentIds?.slice(0, 3) || [];
+    topPatentIds = analysisResult.topPatentIds?.slice(0, 5) || [];
     console.log("[PSG-Pro] Analysis complete:", {
       cpcCount: analysisResult.cpcSuggestions?.length,
       swapCount: analysisResult.terminologySwaps?.length,
@@ -1109,7 +1201,7 @@ export async function runProAutoSearch(params: ProAutoSearchParams): Promise<voi
     });
   } catch (err) {
     console.error("[PSG-Pro] Analysis failed, using fallback:", err);
-    // Fallback: use original concepts, pick top 3 by position
+    // Fallback: use original concepts, pick top 5 by position
     analysisResult = {
       cpcSuggestions: [],
       terminologySwaps: [],
@@ -1121,10 +1213,10 @@ export async function runProAutoSearch(params: ProAutoSearchParams): Promise<voi
       })),
       topPatentIds: [],
     };
-    topPatentIds = round1Scraped.slice(0, 3).map((p: any) => p.patentId);
+    topPatentIds = round1Scraped.slice(0, 5).map((p: any) => p.patentId);
   }
 
-  // Step 4: Similarity searches for top 3 patents
+  // Step 4: Similarity searches for top 5 patents
   onProgress({ phase: "similarity", message: "Running similarity searches...", percent: 45 });
   const similarityResults: ResultSet[] = [];
 
@@ -1140,7 +1232,7 @@ export async function runProAutoSearch(params: ProAutoSearchParams): Promise<voi
     if (!tabOk) break;
 
     const simStart = Date.now();
-    const simResults = await runSingleSearch(tabId, `~patent/${patentId}`, 25);
+    const simResults = await runSingleSearch(tabId, `~patent/${patentId}`, 35);
     if (simResults.length > 0) {
       similarityResults.push({ results: simResults, source: `similar-${patentId}` as ProFoundBySource });
     }
@@ -1216,7 +1308,7 @@ export async function runProAutoSearch(params: ProAutoSearchParams): Promise<voi
 
   // Step 7b: BigQuery enrichment for top N
   onProgress({ phase: "deep-scrape", message: "Enriching top results with detailed patent data...", percent: 92 });
-  const bqEnrichedPatents = await bigQueryEnrichTopN(allFinalPatents, 10);
+  const bqEnrichedPatents = await bigQueryEnrichTopN(allFinalPatents, 25);
 
   // Step 8: Store results and open results page
   onProgress({ phase: "done", message: "Opening results page...", percent: 95 });
@@ -1302,7 +1394,7 @@ export async function runProInteractiveSearch(params: ProInteractiveSearchParams
   const [optimizedResultI, rawTextResultsI] = await Promise.all([
     optimizeQuery(smartRawText)
       .catch(() => ({ optimizedQuery: "", reasoning: "" })),
-    runSingleSearch(tabId, smartRawText, 25),
+    runSingleSearch(tabId, smartRawText, 35),
   ]);
   console.log(`[PSG-ProI] Round 1 raw text: ${rawTextResultsI.length} results`);
   searchLog.push({ round: 1, label: "Raw text", query: smartRawText, resultCount: rawTextResultsI.length, durationMs: Date.now() - r1RawStartI });
@@ -1333,7 +1425,7 @@ export async function runProInteractiveSearch(params: ProInteractiveSearchParams
     const tabOkAII = await verifyTab(tabId, "pre-round1-ai-i");
     if (tabOkAII) {
       const r1AiStartI = Date.now();
-      aiResultsI = await runSingleSearch(tabId, optimizedResultI.optimizedQuery, 25);
+      aiResultsI = await runSingleSearch(tabId, optimizedResultI.optimizedQuery, 35);
       console.log(`[PSG-ProI] Round 1 AI-optimized: ${aiResultsI.length} results`);
       searchLog.push({ round: 1, label: "AI-optimized", query: optimizedResultI.optimizedQuery, resultCount: aiResultsI.length, durationMs: Date.now() - r1AiStartI });
     }
@@ -1434,15 +1526,15 @@ export async function runProInteractiveSearch(params: ProInteractiveSearchParams
   // Similarity searches for user-selected patents
   onProgress({ phase: "similarity", message: "Running similarity searches...", percent: 45 });
   const similarityResults1: ResultSet[] = [];
-  const simPatents = userSelections1.selectedPatentIds.slice(0, 3);
+  const simPatents = userSelections1.selectedPatentIds.slice(0, 5);
 
   for (let i = 0; i < simPatents.length; i++) {
     const patentId = simPatents[i];
-    onProgress({ phase: "similarity", message: `Similarity ${i + 1}/${simPatents.length}: ${patentId}...`, percent: 45 + (i * 8) });
+    onProgress({ phase: "similarity", message: `Similarity ${i + 1}/${simPatents.length}: ${patentId}...`, percent: 45 + (i * 5) });
     const tabOk = await verifyTab(tabId, `pre-sim1-${i}`);
     if (!tabOk) break;
     const simStartI = Date.now();
-    const simResults = await runSingleSearch(tabId, `~patent/${patentId}`, 25);
+    const simResults = await runSingleSearch(tabId, `~patent/${patentId}`, 35);
     if (simResults.length > 0) {
       similarityResults1.push({ results: simResults, source: `similar-${patentId}` as ProFoundBySource });
     }
@@ -1527,14 +1619,14 @@ export async function runProInteractiveSearch(params: ProInteractiveSearchParams
 
   // Similarity from Round 2 picks
   const similarityResults2: ResultSet[] = [];
-  const simPatents2 = userSelections2.selectedPatentIds.slice(0, 3);
+  const simPatents2 = userSelections2.selectedPatentIds.slice(0, 5);
   for (let i = 0; i < simPatents2.length; i++) {
     const patentId = simPatents2[i];
-    onProgress({ phase: "similarity", message: `Final similarity ${i + 1}/${simPatents2.length}...`, percent: 78 + (i * 5) });
+    onProgress({ phase: "similarity", message: `Final similarity ${i + 1}/${simPatents2.length}...`, percent: 78 + (i * 3) });
     const tabOk = await verifyTab(tabId, `pre-sim2-${i}`);
     if (!tabOk) break;
     const sim2StartI = Date.now();
-    const simResults = await runSingleSearch(tabId, `~patent/${patentId}`, 25);
+    const simResults = await runSingleSearch(tabId, `~patent/${patentId}`, 35);
     if (simResults.length > 0) {
       similarityResults2.push({ results: simResults, source: `similar-${patentId}` as ProFoundBySource });
     }
@@ -1565,7 +1657,7 @@ export async function runProInteractiveSearch(params: ProInteractiveSearchParams
 
   // BigQuery enrichment for top N
   onProgress({ phase: "deep-scrape", message: "Enriching top results with detailed patent data...", percent: 94 });
-  const bqEnrichedPatents = await bigQueryEnrichTopN(allFinalPatents, 10);
+  const bqEnrichedPatents = await bigQueryEnrichTopN(allFinalPatents, 25);
 
   // Step 8: Store and open results
   onProgress({ phase: "done", message: "Opening results page...", percent: 96 });
@@ -1675,10 +1767,13 @@ async function getStrategyQueries(
   }
 
   // Enforce Google Patents complexity limits on all queries
-  return queries.map(q => ({
-    ...q,
-    query: enforceGooglePatentsLimits(sanitizeForGooglePatents(q.query)),
-  }));
+  return queries.map(q => {
+    const sanitized = sanitizeForGooglePatents(q.query);
+    const enforced = enforceGooglePatentsLimits(sanitized);
+    console.log(`[PSG-Limits] "${q.label}" | raw=${q.query.length}ch | sanitized=${sanitized.length}ch | enforced=${enforced.length}ch`);
+    console.log(`[PSG-Limits]   enforced query: ${enforced}`);
+    return { ...q, query: enforced };
+  });
 }
 
 /** Single entry point for strategy + depth searches */
@@ -1748,6 +1843,8 @@ async function executeQuickDepth(
 
   const allResultSets: ResultSet[] = [];
   let sweetSpotLayer: number | undefined;
+  let googleUnavailableCount = 0;
+  let totalSearchCount = 0;
 
   if (strategy === 'onion-ring') {
     // Execute layers in order, stop at sweet spot (20-200 results)
@@ -1760,7 +1857,10 @@ async function executeQuickDepth(
       if (!tabOk) break;
 
       const start = Date.now();
-      const results = await runSingleSearch(tabId, q.query, 25);
+      totalSearchCount++;
+      const searchResult = await runSingleSearchFull(tabId, q.query, 35);
+      if (searchResult.googleUnavailable) googleUnavailableCount++;
+      const results = searchResult.results;
       searchLog.push({ round: 1, label: q.label, query: q.query, resultCount: results.length, durationMs: Date.now() - start });
 
       if (results.length > 0) {
@@ -1795,7 +1895,10 @@ async function executeQuickDepth(
       if (!tabOk) break;
 
       const start = Date.now();
-      const results = await runSingleSearch(tabId, q.query, 25);
+      totalSearchCount++;
+      const searchResult = await runSingleSearchFull(tabId, q.query, 35);
+      if (searchResult.googleUnavailable) googleUnavailableCount++;
+      const results = searchResult.results;
       searchLog.push({ round: 1, label: q.label, query: q.query, resultCount: results.length, durationMs: Date.now() - start });
 
       if (results.length > 0) {
@@ -1824,13 +1927,26 @@ async function executeQuickDepth(
       if (!tabOk) break;
 
       const start = Date.now();
-      const results = await runSingleSearch(tabId, q.query, 25);
+      totalSearchCount++;
+      const searchResult = await runSingleSearchFull(tabId, q.query, 35);
+      if (searchResult.googleUnavailable) googleUnavailableCount++;
+      const results = searchResult.results;
       searchLog.push({ round: 1, label: q.label, query: q.query, resultCount: results.length, durationMs: Date.now() - start });
 
       if (results.length > 0) {
         allResultSets.push({ results, source: `round1-${q.label}` as ProFoundBySource });
       }
     }
+  }
+
+  // Check if Google Patents was unavailable for all searches
+  if (totalSearchCount > 0 && googleUnavailableCount >= totalSearchCount) {
+    const queryList = queries.map(q => ({ label: q.label, query: q.query }));
+    throw new GoogleUnavailableError(
+      "Google Patents is temporarily unavailable. Your generated queries are shown below.",
+      queryList,
+      1 // 1 credit for generate-strategy-searches AI call
+    );
   }
 
   // Dedup
@@ -1850,7 +1966,7 @@ async function executeQuickDepth(
 
   // BigQuery enrichment for top N
   onProgress({ phase: "deep-scrape", message: "Enriching top results with detailed patent data...", percent: 92 });
-  const bqEnrichedPatents = await bigQueryEnrichTopN(allFinalPatents, 10);
+  const bqEnrichedPatents = await bigQueryEnrichTopN(allFinalPatents, 25);
 
   // Store results
   onProgress({ phase: "done", message: "Opening results page...", percent: 95 });
@@ -1922,7 +2038,7 @@ async function executeProAutoDepth(
     if (!tabOk) break;
 
     const start = Date.now();
-    const results = await runSingleSearch(tabId, q.query, 25);
+    const results = await runSingleSearch(tabId, q.query, 35);
     searchLog.push({ round: 1, label: q.label, query: q.query, resultCount: results.length, durationMs: Date.now() - start });
 
     if (results.length > 0) {
@@ -1958,11 +2074,11 @@ async function executeProAutoDepth(
       roundNumber: 1,
       originalParagraph,
     });
-    topPatentIds = analysisResult.topPatentIds?.slice(0, 3) || [];
+    topPatentIds = analysisResult.topPatentIds?.slice(0, 5) || [];
   } catch (err) {
     console.error("[PSG-Strategy] Analysis failed:", err);
     analysisResult = { cpcSuggestions: [], terminologySwaps: [], conceptHealth: [], refinedConcepts: [], topPatentIds: [] };
-    topPatentIds = round1Scraped.slice(0, 3).map((p: any) => p.patentId);
+    topPatentIds = round1Scraped.slice(0, 5).map((p: any) => p.patentId);
   }
 
   // Similarity searches
@@ -1974,7 +2090,7 @@ async function executeProAutoDepth(
     const tabOk = await verifyTab(tabId, `sim-${i}`);
     if (!tabOk) break;
     const simStart = Date.now();
-    const simResults = await runSingleSearch(tabId, `~patent/${patentId}`, 25);
+    const simResults = await runSingleSearch(tabId, `~patent/${patentId}`, 35);
     if (simResults.length > 0) {
       similarityResults.push({ results: simResults, source: `similar-${patentId}` as ProFoundBySource });
     }
@@ -2020,7 +2136,7 @@ async function executeProAutoDepth(
     if (!tabOk) break;
 
     const start = Date.now();
-    const results = await runSingleSearch(tabId, queryStr, 25);
+    const results = await runSingleSearch(tabId, queryStr, 35);
     searchLog.push({ round: 2, label: q.label, query: queryStr, resultCount: results.length, durationMs: Date.now() - start });
 
     if (results.length > 0) {
@@ -2045,7 +2161,7 @@ async function executeProAutoDepth(
 
   // BigQuery enrichment for top N
   onProgress({ phase: "deep-scrape", message: "Enriching top results with detailed patent data...", percent: 94 });
-  const bqEnrichedPatents = await bigQueryEnrichTopN(allFinalPatents, 10);
+  const bqEnrichedPatents = await bigQueryEnrichTopN(allFinalPatents, 25);
 
   // Store
   onProgress({ phase: "done", message: "Opening results page...", percent: 96 });
@@ -2118,7 +2234,7 @@ async function executeProInteractiveDepth(
     if (!tabOk) break;
 
     const start = Date.now();
-    const results = await runSingleSearch(tabId, q.query, 25);
+    const results = await runSingleSearch(tabId, q.query, 35);
     searchLog.push({ round: 1, label: q.label, query: q.query, resultCount: results.length, durationMs: Date.now() - start });
 
     if (results.length > 0) {
@@ -2184,7 +2300,7 @@ async function executeProInteractiveDepth(
     if (!tabOk) break;
 
     const start = Date.now();
-    const results = await runSingleSearch(tabId, queryStr, 25);
+    const results = await runSingleSearch(tabId, queryStr, 35);
     searchLog.push({ round: 2, label: q.label, query: queryStr, resultCount: results.length, durationMs: Date.now() - start });
 
     if (results.length > 0) {
@@ -2195,13 +2311,13 @@ async function executeProInteractiveDepth(
   // Similarity from user-selected patents
   onProgress({ phase: "similarity", message: "Running similarity searches...", percent: 45 });
   const simResults1: ResultSet[] = [];
-  const simPatents = userSelections1.selectedPatentIds.slice(0, 3);
+  const simPatents = userSelections1.selectedPatentIds.slice(0, 5);
   for (let i = 0; i < simPatents.length; i++) {
     const patentId = simPatents[i];
     const tabOk = await verifyTab(tabId, `sim1-${i}`);
     if (!tabOk) break;
     const simStart = Date.now();
-    const results = await runSingleSearch(tabId, `~patent/${patentId}`, 25);
+    const results = await runSingleSearch(tabId, `~patent/${patentId}`, 35);
     if (results.length > 0) {
       simResults1.push({ results, source: `similar-${patentId}` as ProFoundBySource });
     }
@@ -2269,13 +2385,13 @@ async function executeProInteractiveDepth(
 
   // Similarity from round 2 picks
   const simResults2: ResultSet[] = [];
-  const simPatents2 = userSelections2.selectedPatentIds.slice(0, 3);
+  const simPatents2 = userSelections2.selectedPatentIds.slice(0, 5);
   for (let i = 0; i < simPatents2.length; i++) {
     const patentId = simPatents2[i];
     const tabOk = await verifyTab(tabId, `sim2-${i}`);
     if (!tabOk) break;
     const sim2Start = Date.now();
-    const results = await runSingleSearch(tabId, `~patent/${patentId}`, 25);
+    const results = await runSingleSearch(tabId, `~patent/${patentId}`, 35);
     if (results.length > 0) {
       simResults2.push({ results, source: `similar-${patentId}` as ProFoundBySource });
     }
@@ -2301,7 +2417,7 @@ async function executeProInteractiveDepth(
 
   // BigQuery enrichment for top N
   onProgress({ phase: "deep-scrape", message: "Enriching top results with detailed patent data...", percent: 93 });
-  const bqEnrichedPatents = await bigQueryEnrichTopN(allFinalPatents, 10);
+  const bqEnrichedPatents = await bigQueryEnrichTopN(allFinalPatents, 25);
 
   // Store
   onProgress({ phase: "done", message: "Opening results page...", percent: 96 });

@@ -4,9 +4,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Button } from './ui/button';
 import UnifiedSearchTab from './tabs/UnifiedSearchTab';
-import SynonymSearch from './SynonymSearch';
-import DefinitionsTab from './DefinitionsTab';
 import ConceptMapperTab from './tabs/ConceptMapperTab';
+import ToolsTab from './tabs/ToolsTab';
 import CreditsTab from './tabs/CreditsTab';
 
 export interface TechnicalSynonyms {
@@ -158,27 +157,22 @@ const BooleanSearchGenerator: React.FC<BooleanSearchGeneratorProps> = ({ activeT
 
         <CardContent className="pb-3">
           <Tabs value={activeTab || 'search'} onValueChange={onTabChange} className="space-y-3">
-            <TabsList className="grid w-full grid-cols-4 h-8">
+            <TabsList className="grid w-full grid-cols-3 h-8">
               <TabsTrigger value="search" className="text-xs px-1">Search</TabsTrigger>
-              <TabsTrigger value="synonyms" className="text-xs px-1">Synonyms</TabsTrigger>
-              <TabsTrigger value="definitions" className="text-xs px-1">Definitions</TabsTrigger>
               <TabsTrigger value="ai-analysis" className="text-xs px-1">Concepts <span className="ml-0.5 text-[8px] font-bold px-1 py-px rounded bg-gradient-to-r from-blue-500 to-purple-500 text-white leading-none">PRO</span></TabsTrigger>
+              <TabsTrigger value="tools" className="text-xs px-1">Tools</TabsTrigger>
             </TabsList>
 
             <TabsContent value="search">
               <UnifiedSearchTab />
             </TabsContent>
 
-            <TabsContent value="synonyms">
-              <SynonymSearch />
-            </TabsContent>
-
-            <TabsContent value="definitions">
-              <DefinitionsTab />
-            </TabsContent>
-
             <TabsContent value="ai-analysis">
               <ConceptMapperTab />
+            </TabsContent>
+
+            <TabsContent value="tools">
+              <ToolsTab />
             </TabsContent>
 
             <TabsContent value="credits">

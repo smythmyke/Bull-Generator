@@ -210,23 +210,24 @@ const ResultsPage: React.FC = () => {
     const terms = extractQueryTerms(data.query);
     setQueryTerms(terms);
 
-    // BigQuery enrichment diagnostic
-    const bqEnriched = data.patents.filter((p: DeepPatentResult) => p.enrichedVia === 'bigquery');
+    // Enrichment diagnostic
+    const enrichedPatents = data.patents.filter((p: DeepPatentResult) => p.enrichedVia);
     const withClaims = data.patents.filter((p: DeepPatentResult) => p.independentClaims && p.independentClaims.length > 0);
     const withCitations = data.patents.filter((p: DeepPatentResult) => p.backwardCitationCount !== undefined);
     const withCpcDetails = data.patents.filter((p: DeepPatentResult) => p.cpcDetails && p.cpcDetails.length > 0);
     const withDesc = data.patents.filter((p: DeepPatentResult) => p.descriptionSnippet && p.descriptionSnippet.length > 0);
-    console.log(`[ResultsPage-BQ] === BigQuery Enrichment Check ===`);
-    console.log(`[ResultsPage-BQ] Total patents: ${data.patents.length}`);
-    console.log(`[ResultsPage-BQ] enrichedVia=bigquery: ${bqEnriched.length}`);
-    console.log(`[ResultsPage-BQ] With independentClaims: ${withClaims.length}`);
-    console.log(`[ResultsPage-BQ] With backwardCitationCount: ${withCitations.length}`);
-    console.log(`[ResultsPage-BQ] With cpcDetails: ${withCpcDetails.length}`);
-    console.log(`[ResultsPage-BQ] With descriptionSnippet: ${withDesc.length}`);
-    if (bqEnriched.length > 0) {
-      const sample = bqEnriched[0];
-      console.log(`[ResultsPage-BQ] Sample enriched patent:`, {
+    console.log(`[ResultsPage] === Patent Enrichment Check ===`);
+    console.log(`[ResultsPage] Total patents: ${data.patents.length}`);
+    console.log(`[ResultsPage] Enriched: ${enrichedPatents.length} (via: ${enrichedPatents[0]?.enrichedVia || 'none'})`);
+    console.log(`[ResultsPage] With independentClaims: ${withClaims.length}`);
+    console.log(`[ResultsPage] With backwardCitationCount: ${withCitations.length}`);
+    console.log(`[ResultsPage] With cpcDetails: ${withCpcDetails.length}`);
+    console.log(`[ResultsPage] With descriptionSnippet: ${withDesc.length}`);
+    if (enrichedPatents.length > 0) {
+      const sample = enrichedPatents[0];
+      console.log(`[ResultsPage] Sample enriched patent:`, {
         id: sample.patentId,
+        enrichedVia: sample.enrichedVia,
         independentClaims: sample.independentClaims?.length,
         totalClaimCount: sample.totalClaimCount,
         backwardCitationCount: sample.backwardCitationCount,

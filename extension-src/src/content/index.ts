@@ -232,7 +232,28 @@ function scrapeScholarResults(limit: number): PatentResult[] {
   return results;
 }
 
-function scrapeResults(limit: number = 25): PatentResult[] {
+function detectGoogleError(): { isError: boolean; reason?: string } {
+  // Check for error indicators in the page
+  const title = document.title || '';
+  if (/503|500|error|unavailable/i.test(title)) {
+    return { isError: true, reason: `Page title indicates error: ${title}` };
+  }
+
+  // Check for Google's "no results" message (legitimate zero results)
+  const bodyText = document.body?.innerText || '';
+  if (/no results found|did not match any documents|no patents found/i.test(bodyText)) {
+    return { isError: false }; // Legitimate no-results, not an error
+  }
+
+  // Check for error/unavailable text in the page body
+  if (/service unavailable|server error|unusual traffic|too many requests/i.test(bodyText)) {
+    return { isError: true, reason: 'Google Patents returned an error page' };
+  }
+
+  return { isError: false };
+}
+
+function scrapeResults(limit: number = 35): PatentResult[] {
   const patentResults = scrapePatentResults(limit);
   const scholarResults = scrapeScholarResults(limit);
   const combined = [...patentResults, ...scholarResults].slice(0, limit);
@@ -311,7 +332,7 @@ async function deepScrapeAll(patents: PatentResult[]): Promise<DeepPatentResult[
   const results: DeepPatentResult[] = [];
 
   // Process in parallel batches of 5 to avoid overwhelming the browser
-  const batchSize = 5;
+  const batchSize = 10;
   for (let i = 0; i < patents.length; i += batchSize) {
     const batch = patents.slice(i, i + batchSize);
     const batchResults = await Promise.all(
@@ -431,6 +452,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     try {
       const results = scrapeResults(limit);
       console.log(`[Patent Search] SCRAPE_RESULTS: returning ${results.length} results`);
+      if (results.length === 0) {
+        const errorCheck = detectGoogleError();
+        if (errorCheck.isError) {
+          console.warn(`[Patent Search] SCRAPE_RESULTS: Google error detected: ${errorCheck.reason}`);
+          sendResponse({ status: 'google-unavailable', reason: errorCheck.reason, results: [], count: 0 });
+          return;
+        }
+      }
       sendResponse({ status: 'ok', results, count: results.length });
     } catch (err) {
       console.error('[Patent Search] SCRAPE_RESULTS: EXCEPTION:', err);

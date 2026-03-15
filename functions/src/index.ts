@@ -2,7 +2,7 @@ import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 import cors from "cors";
 import {handleAIRequest} from "./ai";
-import {handleCreditRequest, getBalance} from "./credits";
+import {handleCreditRequest, useCredit, FREE_ENDPOINTS} from "./credits";
 import {handleWebhookEvent} from "./stripe";
 
 admin.initializeApp();
@@ -11,8 +11,8 @@ const corsHandler = cors({origin: true});
 
 // Rate limiting map: userId -> { count, resetTime }
 const rateLimits = new Map<string, { count: number; resetTime: number }>();
-const RATE_LIMIT = 20; // requests per minute
-const RATE_WINDOW = 60 * 1000; // 1 minute
+const RATE_LIMIT = 100; // requests per hour
+const RATE_WINDOW = 60 * 60 * 1000; // 1 hour
 
 function checkRateLimit(userId: string): boolean {
   const now = Date.now();
@@ -69,33 +69,34 @@ export const ai = functions.https.onRequest((req, res) => {
     try {
       const decodedToken = await verifyAuth(req);
 
-      if (!checkRateLimit(decodedToken.uid)) {
-        res.status(429).json({error: "Rate limit exceeded. Try again later."});
-        return;
-      }
-
       // Route based on path
       const path = req.path;
 
-      // Credit endpoints
+      // Credit endpoints (balance, use, checkout, packs, history)
       if (path.startsWith("/credits/")) {
         const result = await handleCreditRequest(path, req.body, decodedToken);
         res.status(200).json({data: result});
         return;
       }
 
-      // AI endpoints — verify user has credits before processing
+      // AI endpoints — deduct credits server-side BEFORE processing
       const db = admin.firestore();
-      const balance = await getBalance(db, decodedToken.uid);
-      if (balance.freeSearchesRemaining <= 0 && balance.balance <= 0) {
-        res.status(402).json({
-          error: "No searches remaining. Purchase credits to continue.",
-        });
-        return;
-      }
 
-      const result = await handleAIRequest(path, req.body);
-      res.status(200).json({data: result});
+      if (!FREE_ENDPOINTS.has(path)) {
+        // Rate limit only paid endpoints (free endpoints like synonyms/definitions are exempt)
+        if (!checkRateLimit(decodedToken.uid)) {
+          res.status(429).json({error: "Rate limit exceeded. Try again in an hour."});
+          return;
+        }
+        // Paid endpoint: deduct 1 credit per AI call, server-side
+        const deductResult = await useCredit(db, decodedToken.uid, `ai:${path}`, 1);
+        const result = await handleAIRequest(path, req.body);
+        res.status(200).json({data: result, credits: deductResult});
+      } else {
+        // Free endpoint (synonyms, definitions): no credit deduction, no rate limit
+        const result = await handleAIRequest(path, req.body);
+        res.status(200).json({data: result});
+      }
     } catch (error) {
       if (error instanceof functions.https.HttpsError) {
         // Map resource-exhausted to 402

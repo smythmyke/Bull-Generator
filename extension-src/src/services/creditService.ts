@@ -37,15 +37,7 @@ async function callCredits<T>(endpoint: string, body: Record<string, unknown> = 
 // Types
 export interface CreditBalance {
   balance: number;
-  freeSearchesRemaining: number;
-  freeSearchesUsed: number;
   totalUsed: number;
-}
-
-export interface UseResult {
-  source: "free" | "purchased";
-  remaining: number;
-  freeSearchesRemaining: number;
 }
 
 export interface CreditPack {
@@ -70,16 +62,16 @@ export async function getCreditBalance(): Promise<CreditBalance> {
   return callCredits<CreditBalance>("balance");
 }
 
-export async function useCredit(action: string, amount: number = 1): Promise<UseResult> {
-  return callCredits<UseResult>("use", { action, amount });
-}
-
 export async function getCreditPacks(): Promise<{ packs: CreditPack[] }> {
   return callCredits<{ packs: CreditPack[] }>("packs");
 }
 
 export async function createCreditCheckout(packId: string): Promise<{ url: string; sessionId: string }> {
   return callCredits<{ url: string; sessionId: string }>("checkout", { packId });
+}
+
+export async function refundCredit(reason: string, amount: number = 1): Promise<{ balance: number }> {
+  return callCredits<{ balance: number }>("refund", { reason, amount });
 }
 
 export async function getPurchaseHistory(): Promise<PurchaseRecord[]> {

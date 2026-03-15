@@ -9,8 +9,9 @@ import { SearchResultSkeleton } from '../ui/skeleton';
 import { copyToClipboard } from '../booleanSearchUtils';
 import { generateSearchStrings, SearchResponse } from '../../services/apiService';
 import { stopWords, fields } from '../BooleanSearchGenerator';
-import { sanitizeForGooglePatents, runTripleSearch } from '../../utils/patentSearchPipeline';
+import { sanitizeForGooglePatents, runTripleSearch, GoogleUnavailableError } from '../../utils/patentSearchPipeline';
 import { useCreditGate } from '../../hooks/useCreditGate';
+import { refundCredit } from '../../services/creditService';
 import InsufficientCreditsModal from '../InsufficientCreditsModal';
 
 interface SearchState {
@@ -37,6 +38,11 @@ const UnifiedSearchTab: React.FC = () => {
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [searchingField, setSearchingField] = useState<string | null>(null);
   const [searchProgress, setSearchProgress] = useState<string>('');
+  const [googleError, setGoogleError] = useState<{
+    message: string;
+    queries: { label: string; query: string }[];
+    creditsRefunded: number;
+  } | null>(null);
   const isMounted = useRef(true);
 
   useEffect(() => {
@@ -64,6 +70,7 @@ const UnifiedSearchTab: React.FC = () => {
     setErrors([]);
 
     try {
+      setGoogleError(null);
       await runTripleSearch({
         rawText: inputText.trim(),
         booleanQuery,
@@ -76,7 +83,22 @@ const UnifiedSearchTab: React.FC = () => {
     } catch (err) {
       console.error('[PSG] Triple search failed:', err);
       if (isMounted.current) {
-        setErrors([`Search failed: ${err instanceof Error ? err.message : String(err)}`]);
+        if (err instanceof GoogleUnavailableError) {
+          let creditsRefunded = 0;
+          try {
+            await refundCredit('google-unavailable', err.creditsUsed);
+            creditsRefunded = err.creditsUsed;
+          } catch (refundErr) {
+            console.error('[PSG] Refund failed:', refundErr);
+          }
+          setGoogleError({
+            message: err.message,
+            queries: err.queries,
+            creditsRefunded,
+          });
+        } else {
+          setErrors([`Search failed: ${err instanceof Error ? err.message : String(err)}`]);
+        }
       }
     } finally {
       setTimeout(() => {
@@ -285,6 +307,51 @@ const UnifiedSearchTab: React.FC = () => {
             {errors.map((error, i) => (
               <div key={i}>{error}</div>
             ))}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {googleError && (
+        <Alert className="border-amber-300 bg-amber-50">
+          <AlertTriangle className="h-4 w-4 text-amber-600" />
+          <AlertDescription className="space-y-2">
+            <p className="font-medium text-amber-800">{googleError.message}</p>
+            {googleError.creditsRefunded > 0 && (
+              <p className="text-xs text-green-700">
+                {googleError.creditsRefunded} credit{googleError.creditsRefunded > 1 ? 's' : ''} refunded to your account.
+              </p>
+            )}
+            <div className="space-y-1 mt-2">
+              <p className="text-xs font-medium text-amber-700">Your generated queries (copy and try manually):</p>
+              {googleError.queries.map((q, i) => (
+                <div key={i} className="flex items-start gap-1">
+                  <span className="text-xs font-medium text-amber-600 shrink-0">{q.label}:</span>
+                  <code className="text-xs bg-white/60 px-1 py-0.5 rounded break-all flex-1">{q.query}</code>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-5 w-5 p-0 shrink-0"
+                    onClick={() => handleCopy(q.query, `google-error-${i}`)}
+                  >
+                    <Copy className="h-3 w-3" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="mt-2 w-full text-xs"
+              onClick={() => {
+                setGoogleError(null);
+                if (results) {
+                  const booleanQuery = formatResult(results.broad);
+                  searchOnPatents(booleanQuery, 'retry');
+                }
+              }}
+            >
+              Retry Search on Google Patents
+            </Button>
           </AlertDescription>
         </Alert>
       )}

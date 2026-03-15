@@ -1,5 +1,5 @@
 import {GoogleGenerativeAI} from "@google/generative-ai";
-import {enrichFromBigQuery} from "./bigquery";
+import {enrichFromGooglePatents} from "./googlePatentsEnrich";
 
 // Get API key from environment (.env file deployed with functions)
 function getApiKey(): string {
@@ -71,34 +71,26 @@ Follow these exact rules when generating search strings:
 3. GOOGLE PATENTS FORMAT (when searchSystem is "google-patents"):
    - Use truncation wildcards (e.g., scan*, measur*) for word variations — Google Patents supports them
    - Use full words and quoted phrases for multi-word fixed terms (e.g., "lithium ion")
-   - Use AND/OR operators
-   - Proximity operators (NEAR/x, ADJ/x, WITH, SAME) are available for MODERATE and NARROW. These affect result ranking (boosting patents where terms appear close together) but do not filter results out.
+   - ONLY use AND/OR operators — Google Patents does NOT support proximity operators (NEAR/x, ADJ/x, WITH, SAME)
+   - Do NOT use field prefixes (no FT=, TAC=, CL=, AB=, TI=)
+   - IMPORTANT: Keep total OR operators across the entire query to 6 or fewer (Google Patents limit)
 
    BROAD (Google Patents):
-   - Use 3-4 synonyms per group
-   - Connect ALL groups with AND only — no proximity operators
-   - Do NOT use field prefixes
+   - Use 3-4 synonyms per group (max 2 groups to stay within OR budget)
+   - Connect groups with AND only
    Example: (burst OR break OR rupture OR split) AND (head OR tip OR tool OR device)
 
    MODERATE (Google Patents):
-   - Use 3-5 synonyms per group
-   - Choose the connector between each pair of concept groups based on their relationship:
-     * Compound phrases where word order matters (e.g., "wireless" + "charging") → use ADJ/5
-     * Closely related concepts where order is flexible (e.g., "corrosion" + "resistance") → use NEAR/10
-     * Related concepts that co-occur in discussion (e.g., "battery" + "thermal management") → use WITH
-     * Independent concepts from different domains → use AND
-   - Do NOT use field prefixes in moderate
-   Example: ("burst" OR "break" OR "rupture" OR "fracture") NEAR/10 ("drill" OR "tip" OR "tool" OR "bit") AND ("underground" OR "subterranean" OR "wellbore")
+   - Use 3-4 synonyms per group (max 2-3 groups)
+   - Connect ALL groups with AND only
+   - Keep total OR count ≤ 6
+   Example: (burst OR break OR rupture) AND (drill OR tip OR tool) AND (underground OR subterranean)
 
    NARROW (Google Patents):
-   - Use exactly 3 synonyms per group
-   - Use tighter proximity than moderate:
-     * Compound phrases where word order matters → use ADJ/3
-     * Closely related concepts → use NEAR/5
-     * Related concepts in same discussion → use NEAR/10 or WITH
-     * Independent concepts → use AND
-   - Optionally wrap the single most important inventive concept group in CL=() to boost patents where it appears in claims. Only do this for the core novelty, not for supporting/contextual terms.
-   Example: CL=("burst" OR "fracture" OR "rupture") ADJ/3 ("drill bit" OR "tool tip" OR "cutting head") AND ("wellbore" OR "downhole")
+   - Use exactly 2-3 synonyms per group (max 2 groups)
+   - Connect groups with AND only
+   - Fewest OR terms = most restrictive search
+   Example: (burst OR fracture) AND ("drill bit" OR "tool tip")
 
 Key Points:
 - Keep each concept's synonyms in separate parentheses
@@ -117,9 +109,11 @@ async function generateSearch(
 
   const wordList = words.slice(0, 8).join(", ");
   const systemSuffix = searchSystem === "google-patents" ?
-    "\n\nIMPORTANT: Generate search strings in GOOGLE PATENTS FORMAT " +
-    "(no field prefixes, no wildcards, no proximity operators, " +
-    "use quoted phrases)." : "";
+    "\n\nIMPORTANT: Generate search strings in GOOGLE PATENTS FORMAT. " +
+    "Use ONLY AND/OR operators. Do NOT use proximity operators (NEAR/x, ADJ/x, WITH, SAME). " +
+    "Do NOT use field prefixes (FT=, TAC=, CL=, AB=). " +
+    "Keep total OR operators across the entire query to 6 or fewer. " +
+    "Use quoted phrases for multi-word terms." : "";
 
   const model = getModel();
   const result = await model.generateContent({
@@ -579,7 +573,44 @@ ${patentSummaries}`,
     throw new Error("Empty response from Gemini API");
   }
 
-  const parsed = JSON.parse(content) as { ranked: RankedPatent[] };
+  // Sanitize JSON: fix trailing commas, control chars in strings
+  let sanitized = content
+    .replace(/,\s*([\]}])/g, "$1") // trailing commas
+    .replace(/[\x00-\x1f]/g, (ch) => ch === "\n" || ch === "\t" ? ch : ""); // strip control chars except \n \t
+
+  let parsed: { ranked: RankedPatent[] };
+  try {
+    parsed = JSON.parse(sanitized);
+  } catch (firstErr) {
+    // Try stripping to just the JSON object
+    const match = sanitized.match(/\{[\s\S]*\}/);
+    if (match) {
+      try {
+        parsed = JSON.parse(match[0].replace(/,\s*([\]}])/g, "$1"));
+      } catch {
+        console.error("Rank JSON parse failed. First 500 chars:", content.substring(0, 500));
+        throw firstErr;
+      }
+    } else {
+      console.error("Rank JSON parse failed — no JSON object found. First 500 chars:", content.substring(0, 500));
+      throw firstErr;
+    }
+  }
+
+  // Gemini sometimes wraps in an array
+  if (Array.isArray(parsed)) {
+    parsed = (parsed as unknown[])[0] as { ranked: RankedPatent[] } || {ranked: []};
+  }
+  if (typeof parsed === "string") {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch { /* leave as-is */ }
+  }
+
+  if (!parsed.ranked || !Array.isArray(parsed.ranked)) {
+    console.error("Rank response missing 'ranked' array:", JSON.stringify(parsed).substring(0, 300));
+    return [];
+  }
 
   // Normalize score field
   parsed.ranked.forEach((item: RankedPatent) => {
@@ -952,29 +983,21 @@ Example: (scan* OR measur* OR "non-contact" OR detect* OR sens*) AND (dimension*
 
 MODERATE:
 - Use AT MOST 3 concept groups. Pick the 2-3 highest-importance concepts.
-- Include the concept name and 3-5 best synonyms per group
+- Include the concept name and 3-4 best synonyms per group
 - Use truncation wildcards (e.g., scan*, measur*) for word variations
-- Choose the connector between EACH pair of concept groups based on their semantic relationship:
-  * Compound phrases where word order matters (e.g., "wireless" + "charging") → ADJ/5
-  * Closely related concepts where order is flexible (e.g., "corrosion" + "resistance") → NEAR/10
-  * Related concepts that co-occur in the same discussion (e.g., "battery" + "thermal management") → WITH
-  * Independent concepts from different domains (e.g., "vehicle" + "user interface") → AND
-- Do NOT use field prefixes in moderate
-- Proximity operators affect ranking (boosting relevant results higher), not filtering
-- For multi-word concepts (3+ words), decompose into proximity pairs rather than exact phrases. E.g., "non contact scanning" → (non-contact OR noncontact OR contactless) NEAR/5 scan*
-Example: (scan* OR measur* OR detect*) NEAR/10 (dimension* OR geometr* OR topograph*) AND (laser* OR optic* OR "structured light")
+- Connect ALL groups with AND only
+- Do NOT use field prefixes
+- Do NOT use proximity operators (NEAR/x, ADJ/x, WITH, SAME) — Google Patents does not support them
+- Keep total OR operators across entire query ≤ 6
+Example: (scan* OR measur* OR detect*) AND (dimension* OR geometr* OR topograph*) AND (laser* OR optic*)
 
 NARROW:
 - Use AT MOST 2 concept groups. Pick the 2 highest-importance concepts.
 - Include the concept name and 2-3 best synonyms per group
 - Use truncation wildcards
-- Use tighter proximity than moderate:
-  * Compound phrases where word order matters → ADJ/3
-  * Closely related concepts → NEAR/5
-  * Related concepts in same discussion → NEAR/10 or WITH
-  * Independent concepts → AND
-- Optionally wrap the single most important inventive concept group in CL=() to boost claim matches. Only do this for the core novelty, never for contextual or supporting terms.
-Example: CL=(scan* OR measur*) ADJ/3 (dimension* OR geometr*) NEAR/5 (laser* OR optic*)
+- Connect groups with AND only — no proximity operators, no field prefixes
+- Fewest OR terms = most restrictive search
+Example: (scan* OR measur*) AND (dimension* OR geometr*)
 
 KEY POINTS:
 - Quote multi-word phrases (e.g., "drill bit", "lithium ion")
@@ -982,8 +1005,8 @@ KEY POINTS:
 - Use truncation wildcards (word*) for single-word terms with 3+ characters to capture variations
 - Keep each concept's terms in separate parenthesized groups with OR
 - NEVER exceed 3 AND groups — fewer groups = more results = better recall
-- Proximity operators (NEAR/x, ADJ/x, WITH, SAME) only affect ranking, not filtering — they boost patents where terms appear close together
-- The relationship between concept pairs determines the operator — analyze each pair independently
+- ONLY use AND/OR operators — no NEAR/x, ADJ/x, WITH, SAME, CL=
+- Keep total OR operators across entire query to 6 or fewer (Google Patents hard limit)
 - Return ONLY valid JSON, no markdown.`;
 
 interface ConceptInput {
@@ -1325,12 +1348,12 @@ GOOGLE PATENTS HARD LIMITS — queries that violate these will be REJECTED by Go
 - Total query must be concise — prefer fewer, higher-quality terms over exhaustive lists
 
 SYNTAX RULES:
+- ONLY use AND/OR operators — Google Patents does NOT support NEAR/x, ADJ/x, WITH, SAME
+- Do NOT use field prefixes (no FT=, TAC=, CL=, AB=, TI=)
 - Use truncation wildcards (e.g., scan*, measur*, detect*) for single-word terms ≥ 4 characters
 - Quote multi-word phrases ("drill bit", "lithium ion") — do NOT also include unquoted versions
 - Keep each concept's terms in one parenthesized group with OR
-- For multi-word concepts (3+ words), decompose into proximity pairs rather than exact phrases
-- Proximity operators (NEAR/x, ADJ/x, WITH, SAME) boost ranking, they do NOT filter results out
-- CL=() wraps a group to boost patents where it appears in claims — use sparingly for core novelty only
+- Keep total OR operators across the ENTIRE query to 6 or fewer (Google Patents hard limit)
 - Do NOT include brand names
 - Return ONLY valid JSON, no markdown
 
@@ -1344,22 +1367,22 @@ Return JSON matching this schema:
 STRATEGIES:
 
 TELESCOPING — Return exactly 3 queries (Broad, Moderate, Narrow):
-- Broad: AT MOST 2 concept groups, max 6 terms each, wildcards, AND only
-- Moderate: AT MOST 3 concept groups, 3-5 synonyms per group, NEAR/10 or AND per pair, wildcards
-- Narrow: AT MOST 2 concept groups, 2-3 synonyms per group, CL= on core novelty, ADJ/3, wildcards
+- Broad: AT MOST 2 concept groups, 3-4 terms each (≤6 total ORs), wildcards, AND only
+- Moderate: AT MOST 3 concept groups, 3-4 synonyms per group (≤6 total ORs), AND only, wildcards
+- Narrow: AT MOST 2 concept groups, 2-3 synonyms per group, AND only, wildcards
 
 ONION RING — Return N layered queries, each adding one more concept group:
 - Start with the 2 highest-importance concepts (broadest layer)
 - Each subsequent layer adds the next most important concept
-- Maximum 5 synonyms per concept group (plus the concept name itself = 6 terms max)
+- Maximum 3 synonyms per concept group to stay within OR budget (≤6 total ORs)
 - All layers use wildcards, AND between groups
 - The last layer has AT MOST 3 concept groups (skip low-importance concepts if > 3)
 
 FACETED — Return up to 6 two-concept pair queries:
 - Generate queries from 2-concept pairs, sorted by combined importance (high×high first)
-- Each pair: (group1 max 6 terms with wildcards) AND (group2 max 6 terms with wildcards)
+- Each pair: (group1 max 4 terms with wildcards) AND (group2 max 4 terms with wildcards) — ≤6 total ORs
 - Maximum 6 pairs
-- Pick the best 5 synonyms per concept, not all of them`;
+- Pick the best 3 synonyms per concept, not all of them`;
 
 async function generateStrategySearches(
   body: GenerateStrategyBody
@@ -1632,7 +1655,7 @@ export async function handleAIRequest(
   case "/generate-report-sections":
     return generateReportSections(body as unknown as ReportSectionsBody);
   case "/enrich-bigquery":
-    return enrichFromBigQuery(body);
+    return enrichFromGooglePatents(body);
   default:
     throw new Error(`Unknown endpoint: ${path}`);
   }

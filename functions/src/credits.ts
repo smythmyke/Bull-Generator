@@ -9,29 +9,27 @@ export const CREDIT_PACKS = [
   {id: "pack_100", credits: 100, price: 1500, label: "100 searches", perCredit: "$0.15"},
 ] as const;
 
-const FREE_DAILY_LIMIT = 5;
+const STARTER_CREDITS = 5;
+
+// Endpoints that are free (no credit cost)
+// synonyms/definitions = free tools; enrich-npl/enrich-bigquery = data lookups, not AI
+export const FREE_ENDPOINTS = new Set(["/synonyms", "/definitions", "/enrich-npl", "/enrich-bigquery", "/extract-concepts"]);
 
 interface CreditDoc {
   balance: number;
-  freeSearchesUsed: number;
-  freeSearchDate: string;
   totalPurchased: number;
   totalUsed: number;
+  starterCredited: boolean;
   createdAt: FirebaseFirestore.FieldValue;
   updatedAt: FirebaseFirestore.FieldValue;
 }
 
-function todayUTC(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 function defaultCreditDoc(): CreditDoc {
   return {
-    balance: 0,
-    freeSearchesUsed: 0,
-    freeSearchDate: todayUTC(),
+    balance: STARTER_CREDITS,
     totalPurchased: 0,
     totalUsed: 0,
+    starterCredited: true,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   };
@@ -40,23 +38,31 @@ function defaultCreditDoc(): CreditDoc {
 export async function getBalance(
   db: FirebaseFirestore.Firestore,
   uid: string
-): Promise<{balance: number; freeSearchesRemaining: number; freeSearchesUsed: number; totalUsed: number}> {
+): Promise<{balance: number; totalUsed: number}> {
   const docRef = db.collection("credits").doc(uid);
   const snap = await docRef.get();
 
   if (!snap.exists) {
-    return {balance: 0, freeSearchesRemaining: FREE_DAILY_LIMIT, freeSearchesUsed: 0, totalUsed: 0};
+    // New user — initialize with starter credits
+    await docRef.set(defaultCreditDoc());
+    return {balance: STARTER_CREDITS, totalUsed: 0};
   }
 
   const data = snap.data() as CreditDoc;
-  const today = todayUTC();
-  const used = data.freeSearchDate === today ? data.freeSearchesUsed : 0;
+
+  // Migrate legacy users who never got starter credits
+  if (!data.starterCredited) {
+    await docRef.update({
+      balance: admin.firestore.FieldValue.increment(STARTER_CREDITS),
+      starterCredited: true,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    return {balance: (data.balance || 0) + STARTER_CREDITS, totalUsed: data.totalUsed || 0};
+  }
 
   return {
-    balance: data.balance,
-    freeSearchesRemaining: Math.max(0, FREE_DAILY_LIMIT - used),
-    freeSearchesUsed: used,
-    totalUsed: data.totalUsed,
+    balance: data.balance || 0,
+    totalUsed: data.totalUsed || 0,
   };
 }
 
@@ -65,73 +71,101 @@ export async function useCredit(
   uid: string,
   action: string,
   amount: number = 1
-): Promise<{source: "free" | "purchased"; remaining: number; freeSearchesRemaining: number}> {
+): Promise<{remaining: number}> {
   const docRef = db.collection("credits").doc(uid);
-  const today = todayUTC();
 
   return db.runTransaction(async (tx) => {
     const snap = await tx.get(docRef);
 
     let data: CreditDoc;
     if (!snap.exists) {
-      data = {...defaultCreditDoc(), createdAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp()} as CreditDoc;
-      // We'll set it below after determining the source
+      data = {
+        ...defaultCreditDoc(),
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      } as CreditDoc;
+      // New user gets starter credits
+      data.balance = STARTER_CREDITS;
     } else {
       data = snap.data() as CreditDoc;
-    }
-
-    // Reset free searches if new day
-    let freeUsed = data.freeSearchDate === today ? data.freeSearchesUsed : 0;
-
-    // Try free tier first
-    if (freeUsed + amount <= FREE_DAILY_LIMIT) {
-      freeUsed += amount;
-      const update: Record<string, unknown> = {
-        freeSearchesUsed: freeUsed,
-        freeSearchDate: today,
-        totalUsed: (data.totalUsed || 0) + amount,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      };
-      if (!snap.exists) {
-        tx.set(docRef, {...defaultCreditDoc(), ...update});
-      } else {
-        tx.update(docRef, update);
+      // Migrate legacy users
+      if (!data.starterCredited) {
+        data.balance = (data.balance || 0) + STARTER_CREDITS;
+        data.starterCredited = true;
       }
-      return {
-        source: "free" as const,
-        remaining: data.balance || 0,
-        freeSearchesRemaining: FREE_DAILY_LIMIT - freeUsed,
-      };
     }
 
-    // Try purchased credits
     const balance = data.balance || 0;
-    if (balance >= amount) {
-      const newBalance = balance - amount;
-      const update: Record<string, unknown> = {
-        balance: newBalance,
-        freeSearchesUsed: freeUsed,
-        freeSearchDate: today,
-        totalUsed: (data.totalUsed || 0) + amount,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      };
-      if (!snap.exists) {
-        tx.set(docRef, {...defaultCreditDoc(), ...update});
-      } else {
-        tx.update(docRef, update);
-      }
-      return {
-        source: "purchased" as const,
-        remaining: newBalance,
-        freeSearchesRemaining: 0,
-      };
+    if (balance < amount) {
+      throw new functions.https.HttpsError(
+        "resource-exhausted",
+        `Not enough credits. Need ${amount}, have ${balance}. Purchase credits to continue.`
+      );
     }
 
-    // No credits available
-    throw new functions.https.HttpsError(
-      "resource-exhausted",
-      `Not enough credits. Need ${amount}, but none remaining. Purchase credits to continue.`
-    );
+    const newBalance = balance - amount;
+    const update: Record<string, unknown> = {
+      balance: newBalance,
+      totalUsed: (data.totalUsed || 0) + amount,
+      starterCredited: true,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+
+    if (!snap.exists) {
+      tx.set(docRef, {...defaultCreditDoc(), ...update});
+    } else {
+      tx.update(docRef, update);
+    }
+
+    // Log the usage
+    const usageRef = db.collection("credits").doc(uid).collection("usage").doc();
+    tx.set(usageRef, {
+      action,
+      amount,
+      balanceBefore: balance,
+      balanceAfter: newBalance,
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return {remaining: newBalance};
+  });
+}
+
+export async function refundCredit(
+  db: FirebaseFirestore.Firestore,
+  uid: string,
+  reason: string,
+  amount: number = 1
+): Promise<{balance: number}> {
+  const docRef = db.collection("credits").doc(uid);
+
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(docRef);
+    if (!snap.exists) {
+      throw new functions.https.HttpsError("not-found", "No credit record found");
+    }
+
+    const data = snap.data() as CreditDoc;
+    const oldBalance = data.balance || 0;
+    const newBalance = oldBalance + amount;
+
+    tx.update(docRef, {
+      balance: newBalance,
+      totalUsed: Math.max(0, (data.totalUsed || 0) - amount),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    // Log refund in usage subcollection
+    const usageRef = db.collection("credits").doc(uid).collection("usage").doc();
+    tx.set(usageRef, {
+      action: `refund:${reason}`,
+      amount: -amount,
+      balanceBefore: oldBalance,
+      balanceAfter: newBalance,
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return {balance: newBalance};
   });
 }
 
@@ -154,7 +188,7 @@ export async function addCredits(
     if (!snap.exists) {
       tx.set(docRef, {
         ...defaultCreditDoc(),
-        balance: amount,
+        balance: STARTER_CREDITS + amount,
         totalPurchased: amount,
       });
     } else {
@@ -209,6 +243,19 @@ export async function handleCreditRequest(
         throw new functions.https.HttpsError("invalid-argument", "packId is required");
       }
       return createCreditCheckoutSession(user.uid, user.email || "", packId);
+    }
+
+    case "refund": {
+      const reason = (body.reason as string) || "unknown";
+      const amount = typeof body.amount === "number" && body.amount >= 1 ? Math.floor(body.amount) : 1;
+      const allowedReasons = ["google-unavailable"];
+      if (!allowedReasons.includes(reason)) {
+        throw new functions.https.HttpsError("invalid-argument", `Invalid refund reason: ${reason}`);
+      }
+      if (amount > 5) {
+        throw new functions.https.HttpsError("invalid-argument", "Refund amount too high");
+      }
+      return refundCredit(db, user.uid, reason, amount);
     }
 
     case "packs":

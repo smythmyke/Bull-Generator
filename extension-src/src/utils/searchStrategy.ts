@@ -48,10 +48,10 @@ function buildWildcardGroup(terms: string[]): string {
 // ── Telescoping Strategy ──
 
 /**
- * Build 3 queries (Broad/Moderate/Narrow) with limited AND groups.
- * - Broad: top 2 high-importance concepts, all synonyms, wildcards, AND only
- * - Moderate: top 2-3 concepts, 3-5 synonyms, NEAR/10 or AND per pair
- * - Narrow: top 2 concepts, 2-3 synonyms, CL= on core novelty, ADJ/3
+ * Build 3 queries (Broad/Moderate/Narrow) using only Google Patents-compatible operators.
+ * - Broad: top 2 high-importance concepts, up to 5 synonyms, AND only
+ * - Moderate: top 2-3 concepts, 3-4 synonyms, AND only
+ * - Narrow: top 2 concepts, 2-3 synonyms, AND only (fewest OR terms = most restrictive)
  */
 export function buildTelescopingQueries(concepts: ConceptForSearch[]): StrategyQuery[] {
   const enabled = concepts.filter(c => c.enabled);
@@ -67,26 +67,21 @@ export function buildTelescopingQueries(concepts: ConceptForSearch[]): StrategyQ
   });
   const broad = broadGroups.join(" AND ");
 
-  // Moderate: top 3, 3-5 synonyms, NEAR/10 between related pairs
+  // Moderate: top 3, 3-4 synonyms, AND between groups
   const modConcepts = sorted.slice(0, Math.min(3, sorted.length));
   const modGroups = modConcepts.map(c => {
-    const terms = [c.name, ...c.synonyms.slice(0, 4)];
+    const terms = [c.name, ...c.synonyms.slice(0, 3)];
     return buildWildcardGroup(terms);
   });
-  // Use NEAR/10 between first two groups, AND for the rest
-  let moderate = modGroups[0] || "";
-  if (modGroups.length > 1) moderate += ` NEAR/10 ${modGroups[1]}`;
-  for (let i = 2; i < modGroups.length; i++) moderate += ` AND ${modGroups[i]}`;
+  const moderate = modGroups.join(" AND ");
 
-  // Narrow: top 2, 2-3 synonyms, CL= on first, ADJ/3
+  // Narrow: top 2, 2-3 synonyms, AND between groups
   const narrowConcepts = sorted.slice(0, 2);
-  const narrowGroups = narrowConcepts.map((c, i) => {
+  const narrowGroups = narrowConcepts.map(c => {
     const terms = [c.name, ...c.synonyms.slice(0, 2)];
-    const group = buildWildcardGroup(terms);
-    // Wrap the first (most important) concept in CL= for claims search
-    return i === 0 ? `CL=${group}` : group;
+    return buildWildcardGroup(terms);
   });
-  const narrow = narrowGroups.join(" ADJ/3 ");
+  const narrow = narrowGroups.join(" AND ");
 
   return [
     { label: "Broad", query: broad },
@@ -133,7 +128,7 @@ export function buildOnionRingQueries(concepts: ConceptForSearch[]): StrategyQue
 
 // ── Faceted Strategy ──
 
-const FACETED_MAX_QUERIES = 6;
+const FACETED_MAX_QUERIES = 8;
 
 /**
  * Combined faceted: anchor + drop-one variants + triplet exploration.

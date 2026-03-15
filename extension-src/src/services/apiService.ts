@@ -25,7 +25,9 @@ async function callAI<T>(endpoint: string, body: Record<string, unknown>): Promi
   if (!response.ok) {
     const errorData = await response.json().catch(() => null);
     const message = errorData?.error || `Request failed: ${response.status}`;
-    throw new Error(message);
+    const err = new Error(message);
+    (err as any).status = response.status;
+    throw err;
   }
 
   const result = await response.json();
@@ -424,7 +426,7 @@ export interface EnrichedPatentBQ {
   filingDate: string;
   grantDate: string;
   entityStatus: string;
-  enrichedVia: "bigquery";
+  enrichedVia: "bigquery" | "google-patents";
 }
 
 export interface EnrichBigQueryResponse {

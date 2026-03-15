@@ -20,14 +20,12 @@ const AnimatedCreditPill: React.FC<AnimatedCreditPillProps> = ({ onClick }) => {
   const prevTotal = useRef<number | null>(null);
   const isInitial = useRef(true);
 
-  const totalAvailable = credits
-    ? credits.freeSearchesRemaining + credits.balance
-    : 0;
+  const totalAvailable = credits ? credits.balance : 0;
 
   useEffect(() => {
     if (credits === null) return;
 
-    const currentTotal = credits.freeSearchesRemaining + credits.balance;
+    const currentTotal = credits.balance;
 
     if (isInitial.current) {
       prevTotal.current = currentTotal;
@@ -68,20 +66,9 @@ const AnimatedCreditPill: React.FC<AnimatedCreditPillProps> = ({ onClick }) => {
     colorClasses = 'bg-red-100 text-red-700 border-red-300';
   }
 
-  // Display text
-  let displayText: string;
-  if (totalAvailable === 0) {
-    displayText = '0 searches';
-  } else {
-    const parts: string[] = [];
-    if (credits.freeSearchesRemaining > 0) {
-      parts.push(`${credits.freeSearchesRemaining} free`);
-    }
-    if (credits.balance > 0) {
-      parts.push(`${credits.balance} credits`);
-    }
-    displayText = parts.join(' · ') || '0 searches';
-  }
+  const displayText = totalAvailable === 0
+    ? '0 credits'
+    : `${totalAvailable} credits`;
 
   return (
     <button

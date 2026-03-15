@@ -15,6 +15,7 @@ import {
   runProAutoSearch,
   runProInteractiveSearch,
   runStrategyWithDepth,
+  GoogleUnavailableError,
   ProSearchProgress,
   RefinementDashboardData,
   UserRefinementSelections,
@@ -24,6 +25,7 @@ import { mergeConcepts, MergeableConcept } from '../../utils/conceptMerger';
 import RefinementDashboard from '../RefinementDashboard';
 import { useCreditGate } from '../../hooks/useCreditGate';
 import { useCreditContext } from '../../contexts/CreditContext';
+import { refundCredit } from '../../services/creditService';
 import InsufficientCreditsModal from '../InsufficientCreditsModal';
 import AnimatedCreditPill from '../AnimatedCreditPill';
 
@@ -60,6 +62,11 @@ const ConceptMapperTab: React.FC = () => {
   const [searchingField, setSearchingField] = useState<string | null>(null);
   const [searchProgress, setSearchProgress] = useState('');
   const [error, setError] = useState('');
+  const [googleError, setGoogleError] = useState<{
+    message: string;
+    queries: { label: string; query: string }[];
+    creditsRefunded: number;
+  } | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [newName, setNewName] = useState('');
@@ -347,6 +354,7 @@ const ConceptMapperTab: React.FC = () => {
     await withCreditCheck(actionKey, creditCost, async () => {
       setSearchingField(actionKey);
       setError('');
+      setGoogleError(null);
 
       try {
         await runStrategyWithDepth({
@@ -378,7 +386,22 @@ const ConceptMapperTab: React.FC = () => {
         });
       } catch (err) {
         if (isMounted.current) {
-          setError(err instanceof Error ? err.message : 'Strategy search failed');
+          if (err instanceof GoogleUnavailableError) {
+            let creditsRefunded = 0;
+            try {
+              await refundCredit('google-unavailable', err.creditsUsed);
+              creditsRefunded = err.creditsUsed;
+            } catch (refundErr) {
+              console.error('[PSG] Refund failed:', refundErr);
+            }
+            setGoogleError({
+              message: err.message,
+              queries: err.queries,
+              creditsRefunded,
+            });
+          } else {
+            setError(err instanceof Error ? err.message : 'Strategy search failed');
+          }
         }
       } finally {
         if (isMounted.current) {
@@ -565,6 +588,40 @@ const ConceptMapperTab: React.FC = () => {
       {error && (
         <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-md p-2">
           {error}
+        </div>
+      )}
+
+      {googleError && (
+        <div className="text-xs bg-amber-50 border border-amber-300 rounded-md p-3 space-y-2">
+          <p className="font-medium text-amber-800">{googleError.message}</p>
+          {googleError.creditsRefunded > 0 && (
+            <p className="text-green-700">
+              {googleError.creditsRefunded} credit{googleError.creditsRefunded > 1 ? 's' : ''} refunded to your account.
+            </p>
+          )}
+          <div className="space-y-1">
+            <p className="font-medium text-amber-700">Your generated queries (copy and try manually):</p>
+            {googleError.queries.map((q, i) => (
+              <div key={i} className="flex items-start gap-1">
+                <span className="font-medium text-amber-600 shrink-0">{q.label}:</span>
+                <code className="bg-white/60 px-1 py-0.5 rounded break-all flex-1">{q.query}</code>
+                <button
+                  className="shrink-0 text-muted-foreground hover:text-foreground"
+                  onClick={() => { copyToClipboard(q.query); setCopiedField(`google-error-${i}`); setTimeout(() => { if (isMounted.current) setCopiedField(null); }, 2000); }}
+                >
+                  {copiedField === `google-error-${i}` ? <Check className="h-3 w-3 text-green-600" /> : <Copy className="h-3 w-3" />}
+                </button>
+              </div>
+            ))}
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="w-full"
+            onClick={() => { setGoogleError(null); handleStrategySearch(); }}
+          >
+            Retry Search on Google Patents
+          </Button>
         </div>
       )}
 

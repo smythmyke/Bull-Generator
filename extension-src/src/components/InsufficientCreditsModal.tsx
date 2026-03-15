@@ -13,9 +13,7 @@ const InsufficientCreditsModal: React.FC<InsufficientCreditsModalProps> = ({
   creditsNeeded = 1,
 }) => {
   const { credits } = useCreditContext();
-  const available = credits
-    ? credits.freeSearchesRemaining + credits.balance
-    : 0;
+  const available = credits ? credits.balance : 0;
 
   return (
     <div className="border-2 border-red-300 rounded-lg p-3 bg-gradient-to-b from-red-50 to-white shadow-sm space-y-3">
@@ -25,7 +23,7 @@ const InsufficientCreditsModal: React.FC<InsufficientCreditsModalProps> = ({
           <div>
             <h3 className="text-sm font-semibold text-red-800">No searches remaining</h3>
             <p className="text-xs text-red-600 mt-0.5">
-              You've used all free searches for today. Purchase credits to continue searching.
+              You've used all your credits. Purchase more to continue searching.
             </p>
           </div>
         </div>
