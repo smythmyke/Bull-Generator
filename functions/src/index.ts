@@ -4,6 +4,7 @@ import cors from "cors";
 import {handleAIRequest} from "./ai";
 import {handleCreditRequest, useCredit, FREE_ENDPOINTS} from "./credits";
 import {handleWebhookEvent} from "./stripe";
+import {createEouHandler} from "./eou";
 
 admin.initializeApp();
 
@@ -138,4 +139,37 @@ export const stripeWebhook = functions.https.onRequest((req, res) => {
       const message = error instanceof Error ? error.message : "Webhook processing failed";
       res.status(400).json({error: message});
     });
+});
+
+// EOU (Evidence of Use) endpoints for Patent Evidence Search app
+export const eou = functions.https.onRequest((req, res) => {
+  corsHandler(req, res, async () => {
+    if (req.method === "OPTIONS") {
+      res.status(204).send("");
+      return;
+    }
+
+    if (req.method !== "POST") {
+      res.status(405).json({error: "Method not allowed"});
+      return;
+    }
+
+    try {
+      const decodedToken = await verifyAuth(req);
+      const handler = createEouHandler();
+      await handler(req, res, decodedToken);
+    } catch (error) {
+      if (error instanceof functions.https.HttpsError) {
+        const statusCode = error.code === "unauthenticated" ? 401 :
+          error.code === "not-found" ? 404 :
+          error.code === "invalid-argument" ? 400 :
+          error.code === "permission-denied" ? 403 : 500;
+        res.status(statusCode).json({error: error.message});
+        return;
+      }
+      console.error("EOU request error:", error);
+      const message = error instanceof Error ? error.message : "Unknown error";
+      res.status(500).json({error: message});
+    }
+  });
 });
