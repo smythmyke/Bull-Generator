@@ -1,4 +1,4 @@
-import { optimizeQuery, enrichNPL, EnrichedNPLItem, analyzeRound, AnalyzeRoundResponse, CPCSuggestion, TerminologySwap, ConceptHealth, generateStrategySearches, SearchStrategy, SearchDepth, StrategySearchQuery, enrichBigQuery, EnrichedPatentBQ } from "../services/apiService";
+import { optimizeQuery, enrichNPL, EnrichedNPLItem, analyzeRound, AnalyzeRoundResponse, CPCSuggestion, TerminologySwap, ConceptHealth, generateStrategySearches, SearchStrategy, SearchDepth, StrategySearchQuery } from "../services/apiService";
 import { ConceptForSearch, buildGroup } from "./conceptSearchBuilder";
 import { buildTelescopingQueries, buildOnionRingQueries, buildFacetedQueries } from "./searchStrategy";
 import { mergeConcepts, MergeableConcept, MergeResult } from "./conceptMerger";
@@ -17,9 +17,15 @@ export class GoogleUnavailableError extends Error {
 
 /**
  * Convert an Orbit/Quartet-syntax boolean query to Google Patents-compatible syntax.
- * Strips: field prefixes (FT=, TAC=, AB=, CL=, etc.), country codes (AND CC=XX).
- * Converts: NEAR/N, ADJ/N, nD, WITH, SAME → AND (Google Patents doesn't support proximity).
- * Preserves: truncation wildcards (*), AND, OR operators.
+ *
+ * Strips: Orbit-only field prefixes (FT=, TAC=, CA=), country codes (AND CC=XX).
+ * Preserves: Google Patents field operators (TI=, AB=, CL=), proximity (NEAR/N, ADJ/N, WITH, SAME),
+ *   truncation wildcards ($ and *), AND, OR, NOT operators.
+ * Converts: Orbit-only nD proximity → NEAR/N (Google Patents syntax).
+ *   Orbit `*` (single-char wildcard) is left as-is; callers should prefer `$` for stemming.
+ *
+ * Note: Google Patents proximity + field operators are "not robust" per docs.
+ *   Simple keyword proximity works. Complex nested field+proximity may not.
  */
 export function sanitizeForGooglePatents(query: string): string {
   let q = query;
@@ -31,51 +37,54 @@ export function sanitizeForGooglePatents(query: string): string {
     return "";
   });
 
-  // Remove ALL field prefixes — Google Patents doesn't support any of them
-  q = q.replace(/\b(?:FT|TAC|AB|TI|CA|CL)\s*=/gi, "");
+  // Remove Orbit-only field prefixes (FT=fulltext, TAC=title+abstract+claims, CA=assignee)
+  // Preserve Google Patents field operators: TI=, AB=, CL=
+  q = q.replace(/\b(?:FT|TAC|CA)\s*=/gi, "");
 
   // Remove country code clause: AND CC=XX (with optional parens/spaces)
   q = q.replace(/\s+AND\s+CC\s*=\s*[A-Z]{2}/gi, "");
 
-  // Convert proximity operators to AND — Google Patents doesn't support them
-  q = q.replace(/\s+(NEAR\/\d+|ADJ\/\d+|WITH|SAME)\s+/gi, " AND ");
-
-  // Convert Orbit nD proximity → AND
-  q = q.replace(/\s+\d+D\s+/gi, " AND ");
+  // Convert Orbit nD proximity → NEAR/N (Google Patents syntax)
+  q = q.replace(/\s+(\d+)D\s+/gi, (_match, n) => ` NEAR/${n} `);
 
   // Clean up double spaces and stray parens
   q = q.replace(/\(\s*\)/g, "");
   q = q.replace(/\s{2,}/g, " ");
   q = q.trim();
 
-  // Append extracted CPC codes in Google Patents syntax
+  // Append extracted CPC codes using semicolon syntax (Google Patents format)
   if (cpcCodes.length > 0) {
-    const cpcClause = cpcCodes.map(c => `cpc=${c}`).join(" ");
-    q = q ? `${q} ${cpcClause}` : cpcClause;
+    const cpcClause = cpcCodes.map(c => `(${c})`).join(";");
+    q = q ? `${q};${cpcClause}` : cpcClause;
   }
 
   return q;
 }
 
 /**
- * Google Patents has a hard limit on query complexity.
- * Enforces: max 3 AND groups, max 6 TOTAL OR operators across the entire query,
- * and removes redundant quoted/unquoted duplicates.
- * Google Patents does NOT support: NEAR/N, ADJ/N, WITH, SAME, CL=, or other
- * Orbit/Questel syntax — sanitizeForGooglePatents() should be called first.
+ * Enforce reasonable query complexity limits for Google Patents.
+ * Empirical testing (March 2026) confirmed:
+ *   - 5 AND groups + 5 OR terms/group works reliably
+ *   - No documented hard limit on AND groups up to 5+
+ *   - 8 OR terms per group works fine
+ * Conservative limits to avoid rate-limiting on very complex queries:
+ *   - Max 5 AND groups, max 20 total OR operators
+ * Also deduplicates redundant quoted/unquoted terms.
  */
 export function enforceGooglePatentsLimits(query: string): string {
   let q = query.trim();
 
-  // Remove trailing semicolons (invalid syntax)
-  q = q.replace(/;\s*$/, "");
-
-  // Separate out CPC clauses to preserve them
+  // Separate out semicolon-delimited CPC codes to preserve them
+  // Format: (search terms);(G06F1/1616);(H05K5/023)
   const cpcParts: string[] = [];
-  q = q.replace(/\bcpc=[A-Z0-9/]+/gi, (match) => {
-    cpcParts.push(match);
-    return " __CPC__ ";
-  });
+  if (q.includes(';')) {
+    const semiParts = q.split(';');
+    q = semiParts[0].trim(); // main query is before first semicolon
+    for (let i = 1; i < semiParts.length; i++) {
+      const part = semiParts[i].trim();
+      if (part) cpcParts.push(part);
+    }
+  }
 
   // Split on top-level AND operators
   const andPattern = /\s+AND\s+/gi;
@@ -92,17 +101,17 @@ export function enforceGooglePatentsLimits(query: string): string {
   }
   parts.push(q.slice(lastIndex).trim());
 
-  // Filter out empty parts and __CPC__ placeholders
+  // Filter out empty parts
   const realParts: { text: string; op: string }[] = [];
   for (let i = 0; i < parts.length; i++) {
-    const cleaned = parts[i].replace(/__CPC__/g, "").trim();
+    const cleaned = parts[i].trim();
     if (!cleaned) continue;
     realParts.push({ text: cleaned, op: i > 0 ? (operators[i - 1] || "AND") : "" });
   }
 
-  // Limit to max 3 AND groups
-  const MAX_AND_GROUPS = 3;
-  const MAX_TOTAL_OR = 6; // Google Patents budget for total OR operators across the query
+  // Empirically verified: 5 AND groups + 8 OR/group works (March 2026 curl tests)
+  const MAX_AND_GROUPS = 5;
+  const MAX_TOTAL_OR = 20;
 
   console.log(`[PSG-Enforcer] Input groups: ${realParts.length}`);
   realParts.forEach((p, i) => {
@@ -127,15 +136,17 @@ export function enforceGooglePatentsLimits(query: string): string {
     const orTerms = groupText.split(/\s+OR\s+/i).map(t => t.trim()).filter(Boolean);
 
     if (orTerms.length > 1) {
-      // Deduplicate: normalize by removing quotes, then keep the best version
+      // Deduplicate: normalize by removing quotes and wildcards, keep best version
       const seen = new Map<string, string>();
       for (const term of orTerms) {
-        const normalized = term.replace(/"/g, "").toLowerCase().trim();
+        const normalized = term.replace(/["$*]/g, "").toLowerCase().trim();
         if (!seen.has(normalized)) {
           seen.set(normalized, term);
         } else {
           const existing = seen.get(normalized)!;
-          if (term.includes("*") && !existing.includes("*")) {
+          // Prefer truncated version ($) over exact, then * over exact
+          if ((term.includes("$") && !existing.includes("$")) ||
+              (term.includes("*") && !existing.includes("*") && !existing.includes("$"))) {
             seen.set(normalized, term);
           }
         }
@@ -178,9 +189,9 @@ export function enforceGooglePatentsLimits(query: string): string {
     result += ` AND ${assembledGroups[i].text}`;
   }
 
-  // Re-append CPC codes
+  // Re-append CPC codes with semicolon syntax
   if (cpcParts.length > 0) {
-    result = `${result} ${cpcParts.join(" ")}`.trim();
+    result = `${result};${cpcParts.join(";")}`.trim();
   }
 
   // Final cleanup
@@ -194,101 +205,7 @@ export function enforceGooglePatentsLimits(query: string): string {
   return result;
 }
 
-/**
- * Enrich top N patents via BigQuery for richer claims, citations, CPC details.
- * Gracefully falls back to original data on any error.
- */
-async function bigQueryEnrichTopN(
-  patents: any[],
-  topN = 25,
-  onProgress?: ((msg: string) => void) | ((progress: { phase: string; message: string; percent: number }) => void)
-): Promise<any[]> {
-  try {
-    // Filter to actual patents (not NPL)
-    const realPatents = patents.filter(
-      (p) => p.patentId && !p.countries?.includes("NPL")
-    );
-    const topPatents = realPatents.slice(0, topN);
-
-    console.log(`[PSG-BQ] Total patents: ${patents.length}, real (non-NPL): ${realPatents.length}, enriching top ${topPatents.length}`);
-    if (topPatents.length === 0) {
-      console.log("[PSG-BQ] No patents to enrich, skipping");
-      return patents;
-    }
-
-    const patentIds = topPatents.map((p: any) => p.patentId as string);
-    console.log(`[PSG-BQ] Requesting enrichment for IDs:`, patentIds);
-
-    const bqStart = Date.now();
-    const response = await enrichBigQuery(patentIds);
-    const bqDuration = Date.now() - bqStart;
-    console.log(`[PSG-BQ] API response in ${bqDuration}ms — enriched: ${response.enriched?.length ?? 0}, errors: ${response.errors?.length ?? 0}`);
-
-    if (response.errors?.length > 0) {
-      console.warn("[PSG-BQ] Enrichment errors:", response.errors);
-    }
-
-    if (!response.enriched || response.enriched.length === 0) {
-      console.warn("[PSG-BQ] No enrichment data returned — response:", JSON.stringify(response).substring(0, 500));
-      return patents;
-    }
-
-    // Build lookup by originalId
-    const enrichMap = new Map<string, EnrichedPatentBQ>();
-    for (const item of response.enriched) {
-      enrichMap.set(item.originalId, item);
-    }
-
-    // Log which IDs matched vs missed
-    const matched = patentIds.filter((id) => enrichMap.has(id));
-    const missed = patentIds.filter((id) => !enrichMap.has(id));
-    console.log(`[PSG-BQ] ID matching: ${matched.length} found, ${missed.length} missed`);
-    if (missed.length > 0) {
-      console.log(`[PSG-BQ] Missed IDs:`, missed);
-    }
-
-    // Merge enrichment data back into patents
-    let enrichedCount = 0;
-    const enrichedPatents = patents.map((p: any) => {
-      const enrichment = enrichMap.get(p.patentId);
-      if (!enrichment) return p;
-
-      enrichedCount++;
-      const merged = {...p};
-      merged.independentClaims = enrichment.independentClaims;
-      merged.totalClaimCount = enrichment.totalClaimCount;
-      merged.descriptionSnippet = enrichment.descriptionSnippet;
-      merged.backwardCitationCount = enrichment.backwardCitationCount;
-      merged.backwardCitations = enrichment.backwardCitations;
-      merged.cpcDetails = enrichment.cpcDetails;
-      merged.familyId = enrichment.familyId;
-      merged.entityStatus = enrichment.entityStatus;
-      merged.enrichedVia = enrichment.enrichedVia || "google-patents";
-
-      // Upgrade firstClaim to first independent claim text (backward compat)
-      if (enrichment.independentClaims.length > 0) {
-        merged.firstClaim = enrichment.independentClaims[0].text;
-      }
-
-      // Upgrade cpcCodes from cpcDetails if available
-      if (enrichment.cpcDetails.length > 0) {
-        merged.cpcCodes = enrichment.cpcDetails.map((c) => c.code);
-      }
-
-      // Per-patent diagnostic
-      console.log(`[PSG-BQ]   ${p.patentId}: ${enrichment.independentClaims.length} indep claims (${enrichment.totalClaimCount} total), ${enrichment.backwardCitationCount} citations, ${enrichment.cpcDetails.length} CPCs, family=${enrichment.familyId}, desc=${enrichment.descriptionSnippet.length} chars`);
-
-      return merged;
-    });
-
-    console.log(`[PSG-BQ] === SUMMARY: ${enrichedCount}/${patentIds.length} patents enriched in ${bqDuration}ms ===`);
-    return enrichedPatents;
-  } catch (err) {
-    console.error("[PSG-BQ] BigQuery enrichment FAILED:", err);
-    console.error("[PSG-BQ] Stack:", err instanceof Error ? err.stack : "no stack");
-    return patents;
-  }
-}
+// BigQuery enrichment removed — was costing too much. Deep scrape provides CPC/claims data instead.
 
 /** Ensure Google Patents tab exists, return its ID */
 export async function ensurePatentsTab(): Promise<number> {
@@ -737,9 +654,7 @@ export async function runTripleSearch(params: TripleSearchParams): Promise<void>
     `[PSG] Step 5 COMPLETE: ${deepPatents.length} patents + ${enrichedNPLPatents.length} NPL enriched (${enrichedNPLPatents.filter((n: any) => n.enrichedVia !== "none").length} successfully)`
   );
 
-  // Step 5b: BigQuery enrichment for top N
-  onProgress?.("Enriching top results with detailed patent data...");
-  const bqEnrichedPatents = await bigQueryEnrichTopN(allPatents, 25, onProgress);
+  const bqEnrichedPatents = allPatents; // BigQuery removed — deep scrape provides enrichment
 
   // Step 6: Store results and open results page
   console.log("[PSG] Step 6: Storing results and opening results page...");
@@ -902,8 +817,8 @@ function buildQueryFromParts(
   let query = groups.join(" AND ");
 
   if (cpcCodes.length > 0) {
-    const cpcGroup = `(${cpcCodes.map((c) => `cpc=${c}`).join(" OR ")})`;
-    query = `${query} AND ${cpcGroup}`;
+    const cpcSuffix = cpcCodes.map(c => `(${c})`).join(";");
+    query = `${query};${cpcSuffix}`;
   }
 
   return query;
@@ -1250,12 +1165,22 @@ export async function runProAutoSearch(params: ProAutoSearchParams): Promise<voi
   let round2Concepts: ConceptForSearch[];
   let round2CPCs: string[] = [];
   if (analysisResult.refinedConcepts && analysisResult.refinedConcepts.length > 0) {
-    round2Concepts = analysisResult.refinedConcepts.map((rc) => ({
-      name: rc.name,
-      synonyms: rc.synonyms,
-      enabled: true,
-      importance: 'high' as const,
-    }));
+    // Carry forward modifiers/nouns from original concepts
+    const originalByName = new Map<string, ConceptForSearch>();
+    for (const c of concepts) {
+      originalByName.set(c.name.toLowerCase(), c);
+    }
+    round2Concepts = analysisResult.refinedConcepts.map((rc) => {
+      const original = originalByName.get(rc.name.toLowerCase());
+      return {
+        name: rc.name,
+        synonyms: rc.synonyms || [],
+        modifiers: original?.modifiers,
+        nouns: original?.nouns,
+        enabled: true,
+        importance: original?.importance || 'high' as const,
+      };
+    });
     for (const rc of analysisResult.refinedConcepts) {
       for (const code of rc.addedCPCCodes || []) {
         if (!round2CPCs.includes(code)) round2CPCs.push(code);
@@ -1306,9 +1231,7 @@ export async function runProAutoSearch(params: ProAutoSearchParams): Promise<voi
     onProgress({ phase: "deep-scrape", message: msg, percent: 90 });
   });
 
-  // Step 7b: BigQuery enrichment for top N
-  onProgress({ phase: "deep-scrape", message: "Enriching top results with detailed patent data...", percent: 92 });
-  const bqEnrichedPatents = await bigQueryEnrichTopN(allFinalPatents, 25);
+  const bqEnrichedPatents = allFinalPatents; // BigQuery removed
 
   // Step 8: Store results and open results page
   onProgress({ phase: "done", message: "Opening results page...", percent: 95 });
@@ -1655,9 +1578,7 @@ export async function runProInteractiveSearch(params: ProInteractiveSearchParams
     onProgress({ phase: "deep-scrape", message: msg, percent: 92 });
   });
 
-  // BigQuery enrichment for top N
-  onProgress({ phase: "deep-scrape", message: "Enriching top results with detailed patent data...", percent: 94 });
-  const bqEnrichedPatents = await bigQueryEnrichTopN(allFinalPatents, 25);
+  const bqEnrichedPatents = allFinalPatents; // BigQuery removed
 
   // Step 8: Store and open results
   onProgress({ phase: "done", message: "Opening results page...", percent: 96 });
@@ -1733,38 +1654,28 @@ export interface StrategySearchMeta {
 }
 
 /** Get AI-generated queries with local fallback */
+/**
+ * Build strategy queries using local builders (deterministic, tested).
+ * Uses proximity-paired modifiers/nouns with NEAR/5, $ stemming, and proper limits.
+ * Server-side AI query generation (/generate-strategy-searches) was removed because:
+ *  - Gemini produced inconsistent syntax (wrong wildcards, duplicate terms, generic words)
+ *  - Local builders have tested stemming, proximity, dedup, and enforcer compliance
+ *  - AI is still used for concept extraction (modifiers/nouns) — where it adds real value
+ */
 async function getStrategyQueries(
   concepts: ConceptForSearch[],
   strategy: SearchStrategy
 ): Promise<StrategySearchQuery[]> {
   let queries: StrategySearchQuery[];
 
-  try {
-    const response = await generateStrategySearches({
-      concepts: concepts.filter(c => c.enabled).map(c => ({
-        name: c.name,
-        synonyms: c.synonyms,
-        category: (c as any).category || 'device',
-        importance: c.importance || 'medium',
-        enabled: true,
-      })),
-      strategy,
-    });
-    if (response.queries && response.queries.length > 0) {
-      queries = response.queries;
-    } else {
-      throw new Error("Empty AI response");
-    }
-  } catch (err) {
-    console.warn(`[PSG-Strategy] AI query generation failed, using local fallback:`, err);
-    // Local fallback
-    switch (strategy) {
-      case 'telescoping': queries = buildTelescopingQueries(concepts); break;
-      case 'onion-ring': queries = buildOnionRingQueries(concepts); break;
-      case 'faceted': queries = buildFacetedQueries(concepts); break;
-      default: queries = buildTelescopingQueries(concepts); break;
-    }
+  switch (strategy) {
+    case 'telescoping': queries = buildTelescopingQueries(concepts); break;
+    case 'onion-ring': queries = buildOnionRingQueries(concepts); break;
+    case 'faceted': queries = buildFacetedQueries(concepts); break;
+    default: queries = buildTelescopingQueries(concepts); break;
   }
+
+  console.log(`[PSG-Strategy] Built ${queries.length} ${strategy} queries locally`);
 
   // Enforce Google Patents complexity limits on all queries
   return queries.map(q => {
@@ -1964,9 +1875,7 @@ async function executeQuickDepth(
     onProgress({ phase: "deep-scrape", message: msg, percent: 88 });
   });
 
-  // BigQuery enrichment for top N
-  onProgress({ phase: "deep-scrape", message: "Enriching top results with detailed patent data...", percent: 92 });
-  const bqEnrichedPatents = await bigQueryEnrichTopN(allFinalPatents, 25);
+  const bqEnrichedPatents = allFinalPatents; // BigQuery removed
 
   // Store results
   onProgress({ phase: "done", message: "Opening results page...", percent: 95 });
@@ -2105,9 +2014,24 @@ async function executeProAutoDepth(
   let round2Concepts: ConceptForSearch[];
   let round2CPCs: string[] = [];
   if (analysisResult.refinedConcepts && analysisResult.refinedConcepts.length > 0) {
-    round2Concepts = analysisResult.refinedConcepts.map(rc => ({
-      name: rc.name, synonyms: rc.synonyms, enabled: true, importance: 'high' as const,
-    }));
+    // Build a lookup of original concepts by name for inheriting modifiers/nouns
+    const originalByName = new Map<string, ConceptForSearch>();
+    for (const c of concepts) {
+      originalByName.set(c.name.toLowerCase(), c);
+    }
+
+    round2Concepts = analysisResult.refinedConcepts.map(rc => {
+      // Find the matching original concept to carry forward modifiers/nouns
+      const original = originalByName.get(rc.name.toLowerCase());
+      return {
+        name: rc.name,
+        synonyms: rc.synonyms || [],
+        modifiers: original?.modifiers,
+        nouns: original?.nouns,
+        enabled: true,
+        importance: original?.importance || 'high' as const,
+      };
+    });
     for (const rc of analysisResult.refinedConcepts) {
       for (const code of rc.addedCPCCodes || []) {
         if (!round2CPCs.includes(code)) round2CPCs.push(code);
@@ -2123,11 +2047,11 @@ async function executeProAutoDepth(
 
   for (let i = 0; i < round2Queries.length; i++) {
     const q = round2Queries[i];
-    // Append CPC codes if available
+    // Append CPC codes with semicolon syntax
     let queryStr = q.query;
     if (round2CPCs.length > 0) {
-      const cpcClause = `(${round2CPCs.map(c => `cpc=${c}`).join(" OR ")})`;
-      queryStr = `${queryStr} AND ${cpcClause}`;
+      const cpcSuffix = round2CPCs.map(c => `(${c})`).join(";");
+      queryStr = `${queryStr};${cpcSuffix}`;
     }
     const percent = 72 + Math.round((i / round2Queries.length) * 10);
     onProgress({ phase: "round2", message: `Round 2: ${q.label}...`, percent });
@@ -2159,9 +2083,7 @@ async function executeProAutoDepth(
     onProgress({ phase: "deep-scrape", message: msg, percent: 92 });
   });
 
-  // BigQuery enrichment for top N
-  onProgress({ phase: "deep-scrape", message: "Enriching top results with detailed patent data...", percent: 94 });
-  const bqEnrichedPatents = await bigQueryEnrichTopN(allFinalPatents, 25);
+  const bqEnrichedPatents = allFinalPatents; // BigQuery removed
 
   // Store
   onProgress({ phase: "done", message: "Opening results page...", percent: 96 });
@@ -2292,8 +2214,8 @@ async function executeProInteractiveDepth(
     const q = round2Queries[i];
     let queryStr = q.query;
     if (userSelections1.selectedCPCCodes.length > 0) {
-      const cpcClause = `(${userSelections1.selectedCPCCodes.map(c => `cpc=${c}`).join(" OR ")})`;
-      queryStr = `${queryStr} AND ${cpcClause}`;
+      const cpcSuffix = userSelections1.selectedCPCCodes.map(c => `(${c})`).join(";");
+      queryStr = `${queryStr};${cpcSuffix}`;
     }
 
     const tabOk = await verifyTab(tabId, `r2i-strategy-${i}`);
@@ -2415,9 +2337,7 @@ async function executeProInteractiveDepth(
     onProgress({ phase: "deep-scrape", message: msg, percent: 90 });
   });
 
-  // BigQuery enrichment for top N
-  onProgress({ phase: "deep-scrape", message: "Enriching top results with detailed patent data...", percent: 93 });
-  const bqEnrichedPatents = await bigQueryEnrichTopN(allFinalPatents, 25);
+  const bqEnrichedPatents = allFinalPatents; // BigQuery removed
 
   // Store
   onProgress({ phase: "done", message: "Opening results page...", percent: 96 });

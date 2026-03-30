@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "webpack --mode development --watch",
     "build": "webpack --mode production",
-    "build:dev": "webpack --mode development"
+    "build:dev": "webpack --mode development",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@radix-ui/react-label": "^2.1.8",
@@ -43,6 +45,7 @@
     "tailwindcss": "^3.4.0",
     "ts-loader": "^9.5.1",
     "typescript": "^5.3.0",
+    "vitest": "^4.1.0",
     "webpack": "^5.89.0",
     "webpack-cli": "^5.1.4"
   }

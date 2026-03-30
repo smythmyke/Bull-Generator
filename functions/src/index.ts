@@ -5,6 +5,7 @@ import {handleAIRequest} from "./ai";
 import {handleCreditRequest, useCredit, FREE_ENDPOINTS} from "./credits";
 import {handleWebhookEvent} from "./stripe";
 import {createEouHandler} from "./eou";
+import {handleAdminRequest} from "./admin";
 
 admin.initializeApp();
 
@@ -72,6 +73,13 @@ export const ai = functions.https.onRequest((req, res) => {
 
       // Route based on path
       const path = req.path;
+
+      // Admin endpoints
+      if (path.startsWith("/admin/")) {
+        const result = await handleAdminRequest(path, req.body, decodedToken);
+        res.status(200).json({data: result});
+        return;
+      }
 
       // Credit endpoints (balance, use, checkout, packs, history)
       if (path.startsWith("/credits/")) {

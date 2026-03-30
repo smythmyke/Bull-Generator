@@ -1,6 +1,8 @@
 export interface ConceptForSearch {
   name: string;
-  synonyms: string[];
+  synonyms: string[];          // legacy flat list (backward compat)
+  modifiers?: string[];        // specific qualifiers (e.g., "foldable", "bendable")
+  nouns?: string[];             // generic objects (e.g., "device", "screen")
   enabled: boolean;
   importance?: 'high' | 'medium' | 'low';
 }
@@ -59,7 +61,11 @@ export function buildSearchesFromConcepts(
   };
 }
 
-/** Build a search query that appends CPC code filters */
+/**
+ * Build a search query that appends CPC code filters.
+ * Google Patents uses semicolon-separated CPC codes, not inline `cpc=` syntax.
+ * Format: (search terms);(CPC_CODE1);(CPC_CODE2)
+ */
 export function buildSearchWithCPCCodes(
   concepts: ConceptForSearch[],
   cpcCodes: string[],
@@ -69,8 +75,9 @@ export function buildSearchWithCPCCodes(
   if (!base) return "";
   if (cpcCodes.length === 0) return base;
 
-  const cpcGroup = `(${cpcCodes.map((c) => `cpc=${c}`).join(" OR ")})`;
-  return `${base} AND ${cpcGroup}`;
+  // Semicolon-separated CPC codes — Google Patents advanced search syntax
+  const cpcSuffix = cpcCodes.map(c => `(${c})`).join(";");
+  return `${base};${cpcSuffix}`;
 }
 
 export interface RefinedConceptForSearch {
@@ -106,6 +113,77 @@ export function buildSearchFromRefinedConcepts(
 
   if (allCPCs.size === 0) return base;
 
-  const cpcGroup = `(${Array.from(allCPCs).map((c) => `cpc=${c}`).join(" OR ")})`;
-  return `${base} AND ${cpcGroup}`;
+  // Semicolon-separated CPC codes — Google Patents advanced search syntax
+  const cpcSuffix = Array.from(allCPCs).map(c => `(${c})`).join(";");
+  return `${base};${cpcSuffix}`;
+}
+
+// ── Field Operators ──
+
+export type PatentField = 'TI' | 'AB' | 'CL';
+
+/**
+ * Wrap a concept group to search within a specific patent field.
+ * - TI= : title only (most restrictive, highest relevance signal)
+ * - AB= : abstract only (good balance of precision and recall)
+ * - CL= : claims only (finds patents that claim the concept, best for patentability)
+ *
+ * Note: Google Patents field operators are "not robust" with proximity operators.
+ * Use field operators with simple OR groups, not with NEAR/ADJ.
+ */
+export function wrapWithField(field: PatentField, terms: string[]): string {
+  if (terms.length === 0) return "";
+  const group = buildGroup(terms);
+  return `${field}=(${group})`;
+}
+
+/**
+ * Build a field-targeted search query for precision refinement.
+ * Searches concept terms within claims (CL=) for strongest relevance signal,
+ * or within title+abstract (TI= OR AB=) for broader precision.
+ *
+ * @param concepts Concepts to search
+ * @param field Which patent field to target
+ * @param maxTermsPerConcept How many synonyms per concept (fewer = more precise)
+ */
+export function buildFieldTargetedSearch(
+  concepts: ConceptForSearch[],
+  field: PatentField,
+  maxTermsPerConcept: number = 3,
+): string {
+  const enabled = concepts.filter(c => c.enabled);
+  if (enabled.length === 0) return "";
+
+  const groups = enabled.map(c => {
+    const terms = [c.name, ...c.synonyms.slice(0, maxTermsPerConcept)];
+    return `${field}=(${buildGroup(terms)})`;
+  });
+
+  return groups.join(" AND ");
+}
+
+/**
+ * Build a title+claims cross-field search for maximum precision.
+ * Requires at least one concept term in the title AND at least one in the claims.
+ * This is the most restrictive field search — use when results are too broad.
+ */
+export function buildTitleClaimsSearch(
+  concepts: ConceptForSearch[],
+  maxTermsPerConcept: number = 2,
+): string {
+  const enabled = concepts.filter(c => c.enabled);
+  if (enabled.length < 2) {
+    // With only 1 concept, search it in both fields
+    if (enabled.length === 1) {
+      const terms = [enabled[0].name, ...enabled[0].synonyms.slice(0, maxTermsPerConcept)];
+      return `TI=(${buildGroup(terms)}) AND CL=(${buildGroup(terms)})`;
+    }
+    return "";
+  }
+
+  // Top concept in title, second in claims
+  const titleTerms = [enabled[0].name, ...enabled[0].synonyms.slice(0, maxTermsPerConcept)];
+  const claimsTerms = [enabled[1].name, ...enabled[1].synonyms.slice(0, maxTermsPerConcept)];
+
+  return `TI=(${buildGroup(titleTerms)}) AND CL=(${buildGroup(claimsTerms)})`;
 }

@@ -94,6 +94,13 @@ class MV3SanitizePlugin {
               '.innerHTML=""'
             );
 
+            // Replace: remote CDN URLs for .js files -> empty string
+            // jsPDF bundles a pdfobject.min.js CDN URL that triggers CWS remote code violation
+            source = source.replace(
+              /https?:\/\/[a-zA-Z0-9._\-\/]+\.js\b/g,
+              ''
+            );
+
             // Replace: MSApp.execUnsafeLocalFunction -> direct call
             // IE/Edge legacy API, dead code but flagged by scanner
             source = source.replace(

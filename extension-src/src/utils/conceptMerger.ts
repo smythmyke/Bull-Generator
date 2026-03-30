@@ -5,6 +5,8 @@ export interface MergeableConcept {
   name: string;
   category: string;
   synonyms: string[];
+  modifiers?: string[];
+  nouns?: string[];
   importance: 'high' | 'medium' | 'low';
   enabled: boolean;
 }
@@ -28,7 +30,7 @@ function buildStemSet(concept: MergeableConcept): Set<string> {
   const stems = new Set<string>();
   const words = [
     ...tokenize(concept.name),
-    ...concept.synonyms.flatMap(s => tokenize(s)),
+    ...(concept.synonyms || []).flatMap(s => tokenize(s)),
   ];
   for (const w of words) {
     stems.add(PorterStemmer.stem(w));
@@ -96,8 +98,8 @@ export function mergeConcepts(
 
         // Union synonyms
         const synSet = new Set([
-          ...keeper.synonyms,
-          ...donor.synonyms,
+          ...(keeper.synonyms || []),
+          ...(donor.synonyms || []),
           // Add the donor's name as a synonym if different
           ...(keeper.name.toLowerCase() !== donor.name.toLowerCase() ? [donor.name] : []),
         ]);
@@ -105,6 +107,15 @@ export function mergeConcepts(
         synSet.delete(keeper.name);
 
         keeper.synonyms = Array.from(synSet);
+
+        // Union modifiers and nouns
+        if (keeper.modifiers || donor.modifiers) {
+          keeper.modifiers = [...new Set([...(keeper.modifiers || []), ...(donor.modifiers || [])])];
+        }
+        if (keeper.nouns || donor.nouns) {
+          keeper.nouns = [...new Set([...(keeper.nouns || []), ...(donor.nouns || [])])];
+        }
+
         keeper.mergedFrom = [
           ...(keeper.mergedFrom || []),
           donor.id,

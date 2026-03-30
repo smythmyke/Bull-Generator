@@ -70,7 +70,9 @@ export type ConceptImportance = "high" | "medium" | "low";
 export interface ExtractedConcept {
   name: string;
   category: ConceptCategory;
-  synonyms: string[];
+  synonyms: string[];        // legacy flat list (backward compat)
+  modifiers?: string[];      // specific qualifiers (e.g., "foldable", "bendable")
+  nouns?: string[];           // generic objects (e.g., "device", "screen")
   importance: ConceptImportance;
 }
 
@@ -394,48 +396,4 @@ export async function generateReportSections(
   return callAI<GenerateReportSectionsResponse>("/generate-report-sections", request as unknown as Record<string, unknown>);
 }
 
-// BigQuery enrichment types
-export interface ParsedIndependentClaim {
-  claimNumber: number;
-  text: string;
-}
-
-export interface CitationInfo {
-  citedPublicationNumber: string;
-  citationType: string;
-  phase: string;
-}
-
-export interface CPCDetail {
-  code: string;
-  inventive: boolean;
-  first: boolean;
-}
-
-export interface EnrichedPatentBQ {
-  publicationNumber: string;
-  originalId: string;
-  independentClaims: ParsedIndependentClaim[];
-  totalClaimCount: number;
-  descriptionSnippet: string;
-  backwardCitations: CitationInfo[];
-  backwardCitationCount: number;
-  cpcDetails: CPCDetail[];
-  familyId: string;
-  priorityDate: string;
-  filingDate: string;
-  grantDate: string;
-  entityStatus: string;
-  enrichedVia: "bigquery" | "google-patents";
-}
-
-export interface EnrichBigQueryResponse {
-  enriched: EnrichedPatentBQ[];
-  errors: string[];
-}
-
-export async function enrichBigQuery(
-  publicationNumbers: string[]
-): Promise<EnrichBigQueryResponse> {
-  return callAI<EnrichBigQueryResponse>("/enrich-bigquery", { publicationNumbers });
-}
+// BigQuery enrichment removed — disabled due to cost

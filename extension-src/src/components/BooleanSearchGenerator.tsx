@@ -7,6 +7,8 @@ import UnifiedSearchTab from './tabs/UnifiedSearchTab';
 import ConceptMapperTab from './tabs/ConceptMapperTab';
 import ToolsTab from './tabs/ToolsTab';
 import CreditsTab from './tabs/CreditsTab';
+import AdminTab from './tabs/AdminTab';
+import { useAuthContext } from '../contexts/AuthContext';
 
 export interface TechnicalSynonyms {
   [key: string]: string[];
@@ -34,7 +36,11 @@ interface BooleanSearchGeneratorProps {
   onTabChange?: (tab: string) => void;
 }
 
+const ADMIN_UID = 'cqNTaHoSMLgXGMsk1vXWxFYnTXH3';
+
 const BooleanSearchGenerator: React.FC<BooleanSearchGeneratorProps> = ({ activeTab, onTabChange }) => {
+  const { user } = useAuthContext();
+  const isAdmin = user?.uid === ADMIN_UID;
   const [searchSystem, setSearchSystem] = useState<string>('google-patents');
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
   const [connectedUrl, setConnectedUrl] = useState<string>('');
@@ -157,27 +163,35 @@ const BooleanSearchGenerator: React.FC<BooleanSearchGeneratorProps> = ({ activeT
 
         <CardContent className="pb-3">
           <Tabs value={activeTab || 'search'} onValueChange={onTabChange} className="space-y-3">
-            <TabsList className="grid w-full grid-cols-3 h-8">
+            <TabsList className={`grid w-full ${isAdmin ? 'grid-cols-4' : 'grid-cols-3'} h-8`}>
               <TabsTrigger value="search" className="text-xs px-1">Search</TabsTrigger>
               <TabsTrigger value="ai-analysis" className="text-xs px-1">Concepts <span className="ml-0.5 text-[8px] font-bold px-1 py-px rounded bg-gradient-to-r from-blue-500 to-purple-500 text-white leading-none">PRO</span></TabsTrigger>
               <TabsTrigger value="tools" className="text-xs px-1">Tools</TabsTrigger>
+              {isAdmin && <TabsTrigger value="admin" className="text-xs px-1">Admin</TabsTrigger>}
             </TabsList>
 
-            <TabsContent value="search">
+            {/* forceMount keeps state alive across tab switches; style hides inactive tabs */}
+            <TabsContent value="search" forceMount style={(activeTab || 'search') !== 'search' ? { display: 'none' } : undefined}>
               <UnifiedSearchTab />
             </TabsContent>
 
-            <TabsContent value="ai-analysis">
+            <TabsContent value="ai-analysis" forceMount style={(activeTab || 'search') !== 'ai-analysis' ? { display: 'none' } : undefined}>
               <ConceptMapperTab />
             </TabsContent>
 
-            <TabsContent value="tools">
+            <TabsContent value="tools" forceMount style={(activeTab || 'search') !== 'tools' ? { display: 'none' } : undefined}>
               <ToolsTab />
             </TabsContent>
 
-            <TabsContent value="credits">
+            <TabsContent value="credits" forceMount style={(activeTab || 'search') !== 'credits' ? { display: 'none' } : undefined}>
               <CreditsTab />
             </TabsContent>
+
+            {isAdmin && (
+              <TabsContent value="admin" forceMount style={(activeTab || 'search') !== 'admin' ? { display: 'none' } : undefined}>
+                <AdminTab />
+              </TabsContent>
+            )}
           </Tabs>
         </CardContent>
       </Card>

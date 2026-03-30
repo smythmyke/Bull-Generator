@@ -233,7 +233,7 @@ export function scoreConceptCoverage(
 
   for (const concept of concepts) {
     // Concept is "covered" if name or any synonym has a stem match
-    const allTerms = [concept.name, ...concept.synonyms];
+    const allTerms = [concept.name, ...(concept.synonyms || [])];
     const conceptStems = allTerms.flatMap(t => stemTokens(tokenize(t)));
     const hit = conceptStems.some(stem => textStemSet.has(stem));
     if (hit) matched++;

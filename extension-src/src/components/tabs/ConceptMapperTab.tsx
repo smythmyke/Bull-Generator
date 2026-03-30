@@ -133,6 +133,8 @@ const ConceptMapperTab: React.FC = () => {
     concepts.map(c => ({
       name: c.name,
       synonyms: c.synonyms,
+      modifiers: c.modifiers,
+      nouns: c.nouns,
       enabled: c.enabled,
       importance: c.importance,
     })),
@@ -144,8 +146,19 @@ const ConceptMapperTab: React.FC = () => {
     [conceptsForSearch]
   );
 
-  // Use AI-generated searches if available, otherwise fall back to simple builder
-  const generatedSearches = smartSearches || simpleSearches;
+  // Build preview using the same proximity-paired strategy builders that run at search time
+  const strategyPreview = useMemo(() => {
+    const queries = buildTelescopingQueries(conceptsForSearch);
+    // Map to broad/moderate/narrow format for the preview UI
+    return {
+      broad: queries.find(q => q.label === 'Broad')?.query || '',
+      moderate: queries.find(q => q.label === 'Moderate')?.query || '',
+      narrow: queries.find(q => q.label === 'Narrow')?.query || '',
+    };
+  }, [conceptsForSearch]);
+
+  // Use strategy preview (proximity-paired) for display, fall back to simple if empty
+  const generatedSearches = strategyPreview.broad ? strategyPreview : (smartSearches || simpleSearches);
 
   const hasEnabledConcepts = concepts.some(c => c.enabled);
 
@@ -191,11 +204,19 @@ const ConceptMapperTab: React.FC = () => {
     try {
       const response = await extractConcepts(inputText.trim());
       if (isMounted.current) {
-        const managed: ManagedConcept[] = (response.concepts || []).map(c => ({
-          ...c,
-          id: nextId(),
-          enabled: true,
-        }));
+        const managed: ManagedConcept[] = (response.concepts || []).map(c => {
+          // Build synonyms from modifiers+nouns if AI returned new format without synonyms
+          let synonyms = c.synonyms || [];
+          if (synonyms.length === 0 && (c.modifiers || c.nouns)) {
+            synonyms = [...(c.modifiers || []), ...(c.nouns || [])];
+          }
+          return {
+            ...c,
+            synonyms,
+            id: nextId(),
+            enabled: true,
+          };
+        });
 
         // Run concept merging
         const mergeableList: MergeableConcept[] = managed.map(c => ({
@@ -203,6 +224,8 @@ const ConceptMapperTab: React.FC = () => {
           name: c.name,
           category: c.category,
           synonyms: c.synonyms,
+          modifiers: c.modifiers,
+          nouns: c.nouns,
           importance: c.importance,
           enabled: c.enabled,
         }));
@@ -215,6 +238,8 @@ const ConceptMapperTab: React.FC = () => {
             name: mc.name,
             category: mc.category as ConceptCategory,
             synonyms: mc.synonyms,
+            modifiers: mc.modifiers,
+            nouns: mc.nouns,
             importance: mc.importance,
             enabled: mc.enabled,
           }));

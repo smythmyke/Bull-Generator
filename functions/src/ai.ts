@@ -1,5 +1,6 @@
 import {GoogleGenerativeAI} from "@google/generative-ai";
-import {enrichFromGooglePatents} from "./googlePatentsEnrich";
+// BigQuery/Google Patents enrichment disabled — import removed
+// Gemini API key updated to Tier 2 (March 2026)
 
 // Get API key from environment (.env file deployed with functions)
 function getApiKey(): string {
@@ -20,7 +21,7 @@ function getGenAI(): GoogleGenerativeAI {
 }
 
 function getModel() {
-  return getGenAI().getGenerativeModel({model: "gemini-2.0-flash"});
+  return getGenAI().getGenerativeModel({model: "gemini-2.5-flash"});
 }
 
 // ── Generate Search Strings ──
@@ -1082,26 +1083,37 @@ const EXTRACT_CONCEPTS_PROMPT = `You are a patent search expert that analyzes pa
 
 Given a paragraph describing an invention or technology, extract 4-8 distinct technical concepts. Each concept should represent a separate searchable idea.
 
+IMPORTANT: Each concept must be decomposed into "modifiers" (adjectives, qualifiers, action words that make it specific) and "nouns" (the generic object, component, or thing being described). This enables proximity-based patent searching where modifiers must appear near nouns.
+
 Return JSON matching this schema exactly:
 {
   "concepts": [
     {
       "name": "concept name",
       "category": "device" | "process" | "material" | "property" | "context",
-      "synonyms": ["synonym1", "synonym2", "synonym3", "synonym4"],
+      "modifiers": ["modifier1", "modifier2", "modifier3"],
+      "nouns": ["noun1", "noun2", "noun3"],
       "importance": "high" | "medium" | "low"
     }
   ]
 }
 
+Example decomposition:
+- "foldable display" → modifiers: ["foldable", "bendable", "flexible", "folding"], nouns: ["display", "screen", "panel"]
+- "ultrasonic fingerprint sensor" → modifiers: ["ultrasonic", "acoustic", "piezoelectric"], nouns: ["fingerprint sensor", "biometric sensor", "fingerprint reader"]
+- "hinge mechanism" → modifiers: ["hinge", "pivot", "folding", "articulating"], nouns: ["mechanism", "assembly", "module", "linkage"]
+- "image segmentation" → modifiers: ["image", "semantic", "scene", "pixel-level"], nouns: ["segmentation", "classification", "partitioning", "labeling"]
+
 Rules:
 - Extract 4-8 concepts from the paragraph
-- Each concept gets 3-6 synonyms that a patent examiner would use
+- Each concept gets 3-6 modifiers (specific qualifiers) and 2-4 nouns (generic objects)
+- Modifiers are words that make the concept SPECIFIC — without them, the nouns alone would match too broadly
+- Nouns are the GENERIC thing being described — they need modifiers nearby to be meaningful
+- For single-word concepts (e.g., "beamforming"), put the specific term in modifiers and generic category terms in nouns (e.g., modifiers: ["beamforming", "beam-forming"], nouns: ["technique", "method", "processing"])
 - Categories: "device" (physical components/apparatus), "process" (methods/steps/actions), "material" (substances/compositions), "property" (characteristics/parameters), "context" (application domain/field of use)
 - Importance: "high" (core inventive concept), "medium" (supporting technical feature), "low" (background/contextual)
 - Use full words (no truncation wildcards)
-- Multi-word concepts are fine (e.g., "wireless charging")
-- Synonyms should be technically accurate alternatives a patent searcher would use
+- Synonyms in modifiers and nouns should be technically accurate alternatives a patent examiner would use
 - Return ONLY valid JSON, no markdown.`;
 
 async function extractConcepts(
@@ -1654,8 +1666,7 @@ export async function handleAIRequest(
     return generateStrategySearches(body as unknown as GenerateStrategyBody);
   case "/generate-report-sections":
     return generateReportSections(body as unknown as ReportSectionsBody);
-  case "/enrich-bigquery":
-    return enrichFromGooglePatents(body);
+  // /enrich-bigquery removed — BigQuery disabled due to cost
   default:
     throw new Error(`Unknown endpoint: ${path}`);
   }

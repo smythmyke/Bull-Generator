@@ -12,8 +12,8 @@ export const CREDIT_PACKS = [
 const STARTER_CREDITS = 5;
 
 // Endpoints that are free (no credit cost)
-// synonyms/definitions = free tools; enrich-npl/enrich-bigquery = data lookups, not AI
-export const FREE_ENDPOINTS = new Set(["/synonyms", "/definitions", "/enrich-npl", "/enrich-bigquery", "/extract-concepts"]);
+// synonyms/definitions = free tools; enrich-npl = data lookups, not AI
+export const FREE_ENDPOINTS = new Set(["/synonyms", "/definitions", "/enrich-npl", "/extract-concepts"]);
 
 interface CreditDoc {
   balance: number;
