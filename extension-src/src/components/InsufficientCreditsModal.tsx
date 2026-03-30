@@ -12,7 +12,7 @@ const InsufficientCreditsModal: React.FC<InsufficientCreditsModalProps> = ({
   onDismiss,
   creditsNeeded = 1,
 }) => {
-  const { credits } = useCreditContext();
+  const { credits, hasSubscription } = useCreditContext();
   const available = credits ? credits.balance : 0;
 
   return (
@@ -23,7 +23,9 @@ const InsufficientCreditsModal: React.FC<InsufficientCreditsModalProps> = ({
           <div>
             <h3 className="text-sm font-semibold text-red-800">No searches remaining</h3>
             <p className="text-xs text-red-600 mt-0.5">
-              You've used all your credits. Purchase more to continue searching.
+              {hasSubscription
+                ? "You've used all your subscription credits this month. Buy a top-up pack to continue."
+                : "You've used all your credits. Subscribe for monthly credits or buy a top-up pack."}
             </p>
           </div>
         </div>

@@ -35,9 +35,21 @@ async function callCredits<T>(endpoint: string, body: Record<string, unknown> = 
 }
 
 // Types
+export interface SubscriptionInfo {
+  planId: string;
+  status: "active" | "canceled" | "past_due";
+  currentPeriodEnd: string;
+  monthlyAllocation: number;
+}
+
 export interface CreditBalance {
   balance: number;
+  subscriptionCredits: number;
+  topupCredits: number;
+  freeCreditsGranted: boolean;
   totalUsed: number;
+  totalPurchased: number;
+  subscription: SubscriptionInfo | null;
 }
 
 export interface CreditPack {
@@ -46,6 +58,15 @@ export interface CreditPack {
   price: number;
   label: string;
   perCredit: string;
+}
+
+export interface SubscriptionPlan {
+  id: string;
+  name: string;
+  monthlyCredits: number;
+  price: number;
+  perCredit: string;
+  rolloverCap: number;
 }
 
 export interface PurchaseRecord {
@@ -62,12 +83,28 @@ export async function getCreditBalance(): Promise<CreditBalance> {
   return callCredits<CreditBalance>("balance");
 }
 
+export async function initCredits(): Promise<CreditBalance> {
+  return callCredits<CreditBalance>("init");
+}
+
 export async function getCreditPacks(): Promise<{ packs: CreditPack[] }> {
   return callCredits<{ packs: CreditPack[] }>("packs");
 }
 
+export async function getSubscriptionPlans(): Promise<{ plans: SubscriptionPlan[] }> {
+  return callCredits<{ plans: SubscriptionPlan[] }>("subscription/plans");
+}
+
 export async function createCreditCheckout(packId: string): Promise<{ url: string; sessionId: string }> {
   return callCredits<{ url: string; sessionId: string }>("checkout", { packId });
+}
+
+export async function createSubscriptionCheckout(planId: string): Promise<{ url: string; sessionId: string }> {
+  return callCredits<{ url: string; sessionId: string }>("subscription/checkout", { planId });
+}
+
+export async function createCustomerPortalSession(): Promise<{ url: string }> {
+  return callCredits<{ url: string }>("subscription/portal");
 }
 
 export async function refundCredit(reason: string, amount: number = 1): Promise<{ balance: number }> {

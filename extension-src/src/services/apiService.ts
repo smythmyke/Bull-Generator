@@ -10,7 +10,10 @@ async function getAuthToken(): Promise<string> {
   return user.getIdToken(true);
 }
 
-async function callAI<T>(endpoint: string, body: Record<string, unknown>): Promise<T> {
+async function callAI<T>(endpoint: string, body: Record<string, unknown>, creditCost?: number): Promise<T> {
+  if (creditCost !== undefined) {
+    body = { ...body, creditCost };
+  }
   const token = await getAuthToken();
 
   const response = await fetch(`${AI_BASE_URL}${endpoint}`, {
@@ -272,8 +275,8 @@ export async function generateFromConcepts(
   return callAI<GenerateFromConceptsResponse>("/generate-from-concepts", { concepts } as unknown as Record<string, unknown>);
 }
 
-export async function analyzeRound(request: AnalyzeRoundRequest): Promise<AnalyzeRoundResponse> {
-  return callAI<AnalyzeRoundResponse>("/analyze-round", request as unknown as Record<string, unknown>);
+export async function analyzeRound(request: AnalyzeRoundRequest, creditCost: number = 0): Promise<AnalyzeRoundResponse> {
+  return callAI<AnalyzeRoundResponse>("/analyze-round", request as unknown as Record<string, unknown>, creditCost);
 }
 
 // Prior Art Analysis (102/103) types

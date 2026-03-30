@@ -66,6 +66,7 @@ const AnimatedCreditPill: React.FC<AnimatedCreditPillProps> = ({ onClick }) => {
     colorClasses = 'bg-red-100 text-red-700 border-red-300';
   }
 
+  const hasSubscription = credits?.subscription?.status === 'active';
   const displayText = totalAvailable === 0
     ? '0 credits'
     : `${totalAvailable} credits`;
@@ -75,7 +76,7 @@ const AnimatedCreditPill: React.FC<AnimatedCreditPillProps> = ({ onClick }) => {
       onClick={onClick}
       className={`relative inline-flex items-center text-[10px] font-semibold px-2 py-0.5 rounded-full border cursor-pointer transition-transform ${colorClasses} ${bumping ? 'animate-credit-bump' : ''}`}
     >
-      {displayText}
+      {hasSubscription && <span className="mr-0.5">&#9733;</span>}{displayText}
 
       {/* Floating numbers */}
       {floats.map((f) => (

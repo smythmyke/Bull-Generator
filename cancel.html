@@ -54,12 +54,17 @@
 </head>
 <body>
   <div class="container">
-    <h1>Payment Cancelled</h1>
-    <p>Your credit purchase was not completed. No charges were made. You can try again anytime from the Credits tab in the extension.</p>
+    <h1 id="title">Payment Cancelled</h1>
+    <p id="message">Your purchase was not completed. No charges were made. You can try again anytime from the Credits tab in the extension.</p>
     <button class="close-button" id="closeButton">Close Window</button>
     <p class="note">You can close this tab and return to the Patent Search Generator extension.</p>
   </div>
   <script>
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('subscription') === 'cancelled') {
+      document.getElementById('title').textContent = 'Subscription Cancelled';
+      document.getElementById('message').textContent = 'Your subscription signup was not completed. No charges were made. You can try again anytime from the Credits tab in the extension.';
+    }
     document.getElementById('closeButton').addEventListener('click', function() {
       try {
         window.close();

@@ -289,12 +289,11 @@ export function buildFacetedQueries(concepts: ConceptForSearch[]): StrategyQuery
 
 // ── Credit Costs ──
 
-export function getStrategyCreditCost(depth: SearchDepth, strategy: SearchStrategy): number {
+export function getStrategyCreditCost(depth: SearchDepth, _strategy?: SearchStrategy): number {
   const baseCost: Record<SearchDepth, number> = {
-    quick: 1,
-    'pro-auto': 2,
-    'pro-interactive': 3,
+    quick: 0,
+    'pro-auto': 1,
+    'pro-interactive': 2,
   };
-  const surcharge = strategy === 'faceted' ? 1 : 0;
-  return baseCost[depth] + surcharge;
+  return baseCost[depth];
 }

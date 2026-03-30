@@ -12,11 +12,12 @@ export function useCreditGate() {
    * Firestore listener updates local balance automatically.
    */
   const withCreditCheck = useCallback(
-    async <T>(action: string, _amount: number, fn: () => Promise<T>): Promise<T | undefined> => {
+    async <T>(action: string, amount: number, fn: () => Promise<T>): Promise<T | undefined> => {
       setCreditError(null);
       setShowPurchasePrompt(false);
 
-      if (!canSearch) {
+      // Zero-cost operations (quick searches) skip balance check
+      if (amount > 0 && !canSearch) {
         setShowPurchasePrompt(true);
         setCreditError('No credits remaining. Purchase credits to continue.');
         return undefined;

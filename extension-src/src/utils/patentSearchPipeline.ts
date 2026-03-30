@@ -1,6 +1,6 @@
 import { optimizeQuery, enrichNPL, EnrichedNPLItem, analyzeRound, AnalyzeRoundResponse, CPCSuggestion, TerminologySwap, ConceptHealth, generateStrategySearches, SearchStrategy, SearchDepth, StrategySearchQuery } from "../services/apiService";
 import { ConceptForSearch, buildGroup } from "./conceptSearchBuilder";
-import { buildTelescopingQueries, buildOnionRingQueries, buildFacetedQueries } from "./searchStrategy";
+import { buildTelescopingQueries, buildOnionRingQueries, buildFacetedQueries, getStrategyCreditCost } from "./searchStrategy";
 import { mergeConcepts, MergeableConcept, MergeResult } from "./conceptMerger";
 
 /** Thrown when Google Patents is unavailable (503, error pages, etc.) */
@@ -1090,7 +1090,7 @@ export async function runProAutoSearch(params: ProAutoSearchParams): Promise<voi
   console.log(`[PSG-Pro] Round 1 deep scraped: ${round1Scraped.length}`);
   const scrapedIds = new Set(round1Scraped.map((p: any) => p.patentId));
 
-  // Step 3: AI analysis of Round 1
+  // Step 3: AI analysis of Round 1 — deduct pipeline credit cost
   onProgress({ phase: "analyzing", message: "AI analyzing Round 1 results...", percent: 32 });
 
   let analysisResult: AnalyzeRoundResponse;
@@ -1107,7 +1107,7 @@ export async function runProAutoSearch(params: ProAutoSearchParams): Promise<voi
       })),
       roundNumber: 1,
       originalParagraph,
-    });
+    }, getStrategyCreditCost('pro-auto'));
     topPatentIds = analysisResult.topPatentIds?.slice(0, 5) || [];
     console.log("[PSG-Pro] Analysis complete:", {
       cpcCount: analysisResult.cpcSuggestions?.length,
@@ -1377,7 +1377,7 @@ export async function runProInteractiveSearch(params: ProInteractiveSearchParams
   });
   const scrapedIds = new Set(round1Scraped.map((p: any) => p.patentId));
 
-  // Step 3: AI analysis
+  // Step 3: AI analysis — deduct pipeline credit cost on first call
   onProgress({ phase: "analyzing", message: "AI analyzing Round 1...", percent: 20 });
   let analysisResult: AnalyzeRoundResponse;
   try {
@@ -1392,7 +1392,7 @@ export async function runProInteractiveSearch(params: ProInteractiveSearchParams
       })),
       roundNumber: 1,
       originalParagraph,
-    });
+    }, getStrategyCreditCost('pro-interactive'));
   } catch (err) {
     console.error("[PSG-ProI] Analysis failed:", err);
     analysisResult = {
@@ -1969,7 +1969,8 @@ async function executeProAutoDepth(
   });
   const scrapedIds = new Set(round1Scraped.map((p: any) => p.patentId));
 
-  // AI analysis
+  // AI analysis — deduct full pipeline credit cost on this first AI call
+  const pipelineCreditCost = getStrategyCreditCost('pro-auto');
   onProgress({ phase: "analyzing", message: "AI analyzing Round 1...", percent: 38 });
   let analysisResult: AnalyzeRoundResponse;
   let topPatentIds: string[];
@@ -1982,7 +1983,7 @@ async function executeProAutoDepth(
       })),
       roundNumber: 1,
       originalParagraph,
-    });
+    }, pipelineCreditCost);
     topPatentIds = analysisResult.topPatentIds?.slice(0, 5) || [];
   } catch (err) {
     console.error("[PSG-Strategy] Analysis failed:", err);
@@ -2176,7 +2177,8 @@ async function executeProInteractiveDepth(
   });
   const scrapedIds = new Set(round1Scraped.map((p: any) => p.patentId));
 
-  // AI analysis
+  // AI analysis — deduct full pipeline credit cost on first AI call
+  const pipelineCreditCost = getStrategyCreditCost('pro-interactive');
   onProgress({ phase: "analyzing", message: "AI analyzing Round 1...", percent: 22 });
   let analysis1: AnalyzeRoundResponse;
   try {
@@ -2188,7 +2190,7 @@ async function executeProInteractiveDepth(
       })),
       roundNumber: 1,
       originalParagraph,
-    });
+    }, pipelineCreditCost);
   } catch {
     analysis1 = { cpcSuggestions: [], terminologySwaps: [], conceptHealth: [], refinedConcepts: [], topPatentIds: [] };
   }

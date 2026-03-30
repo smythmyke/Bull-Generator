@@ -3,7 +3,11 @@ node_modules/
 
 # Build output
 extension-src/dist/
+extension-src/dist-test/
 functions/lib/
+
+# Google Ads tooling (contains secrets)
+google-ads/
 
 # Environment files (contain secrets)
 .env

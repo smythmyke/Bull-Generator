@@ -74,12 +74,18 @@
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
       </svg>
     </div>
-    <h1>Payment Successful!</h1>
-    <p>Your search credits have been added to your account. They'll appear in the extension within a few seconds.</p>
+    <h1 id="title">Payment Successful!</h1>
+    <p id="message">Your search credits have been added to your account. They'll appear in the extension within a few seconds.</p>
     <button class="close-button" id="closeButton">Close Window</button>
     <p class="note">You can close this tab and return to the Patent Search Generator extension.</p>
   </div>
   <script>
+    // Show appropriate message based on purchase type
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('subscription') === 'success') {
+      document.getElementById('title').textContent = 'Subscription Activated!';
+      document.getElementById('message').textContent = 'Your subscription is now active and credits have been added to your account. They\'ll appear in the extension within a few seconds.';
+    }
     document.getElementById('closeButton').addEventListener('click', function() {
       try {
         window.close();

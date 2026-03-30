@@ -3,8 +3,10 @@ import { useAuthContext } from './AuthContext';
 import { getFirestore, doc, onSnapshot } from 'firebase/firestore';
 import { app } from '../firebaseConfig';
 import {
-  getCreditBalance,
+  initCredits as initCreditsApi,
   createCreditCheckout,
+  createSubscriptionCheckout,
+  createCustomerPortalSession,
   CreditBalance,
 } from '../services/creditService';
 
@@ -13,8 +15,12 @@ interface CreditContextType {
   isLoading: boolean;
   error: string | null;
   canSearch: boolean;
+  hasSubscription: boolean;
+  isFreeUser: boolean;
   refreshBalance: () => Promise<void>;
   purchaseCredits: (packId: string) => Promise<void>;
+  purchaseSubscription: (planId: string) => Promise<void>;
+  openCustomerPortal: () => Promise<void>;
   clearError: () => void;
   /** Update local balance after server-side deduction */
   applyDeduction: (newBalance: number) => void;
@@ -25,13 +31,39 @@ const CreditContext = createContext<CreditContextType>({
   isLoading: true,
   error: null,
   canSearch: false,
+  hasSubscription: false,
+  isFreeUser: true,
   refreshBalance: async () => {},
   purchaseCredits: async () => {},
+  purchaseSubscription: async () => {},
+  openCustomerPortal: async () => {},
   clearError: () => {},
   applyDeduction: () => {},
 });
 
 export const useCreditContext = () => useContext(CreditContext);
+
+function parseBalanceFromSnapshot(data: Record<string, any>): CreditBalance {
+  const subCredits = data.subscriptionCredits || 0;
+  // Backward compat: old docs only have flat `balance`
+  const topCredits = data.topupCredits ?? data.balance ?? 0;
+  const sub = data.subscription || null;
+
+  return {
+    balance: subCredits + topCredits,
+    subscriptionCredits: subCredits,
+    topupCredits: topCredits,
+    freeCreditsGranted: data.freeCreditsGranted || data.starterCredited || false,
+    totalUsed: data.totalUsed || 0,
+    totalPurchased: data.totalPurchased || 0,
+    subscription: sub ? {
+      planId: sub.planId,
+      status: sub.status,
+      currentPeriodEnd: sub.currentPeriodEnd,
+      monthlyAllocation: sub.monthlyAllocation,
+    } : null,
+  };
+}
 
 export const CreditProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, isAuthenticated } = useAuthContext();
@@ -52,16 +84,22 @@ export const CreditProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       doc(db, 'credits', user.uid),
       (snapshot) => {
         if (snapshot.exists()) {
-          const data = snapshot.data();
-          setCredits({
-            balance: data.balance || 0,
-            totalUsed: data.totalUsed || 0,
-          });
+          setCredits(parseBalanceFromSnapshot(snapshot.data()));
         } else {
-          // No doc yet = fresh user, server will create with starter credits on first call
-          setCredits({
-            balance: 5,
-            totalUsed: 0,
+          // No doc yet — initialize via API (grants starter credits)
+          initCreditsApi().then((balance) => {
+            setCredits(balance);
+          }).catch(() => {
+            // Fallback: show 5 starter credits optimistically
+            setCredits({
+              balance: 5,
+              subscriptionCredits: 0,
+              topupCredits: 5,
+              freeCreditsGranted: false,
+              totalUsed: 0,
+              totalPurchased: 0,
+              subscription: null,
+            });
           });
         }
         setIsLoading(false);
@@ -76,12 +114,14 @@ export const CreditProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return () => unsubscribe();
   }, [isAuthenticated, user]);
 
+  const hasSubscription = credits?.subscription?.status === 'active';
+  const isFreeUser = (credits?.totalPurchased || 0) === 0 && !hasSubscription;
   const canSearch = credits !== null && credits.balance > 0;
 
   const refreshBalance = useCallback(async () => {
     if (!isAuthenticated) return;
     try {
-      const balance = await getCreditBalance();
+      const balance = await initCreditsApi();
       setCredits(balance);
     } catch (err) {
       console.error('Failed to refresh balance:', err);
@@ -100,10 +140,42 @@ export const CreditProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   }, []);
 
+  const purchaseSubscription = useCallback(async (planId: string) => {
+    setError(null);
+    try {
+      const { url } = await createSubscriptionCheckout(planId);
+      window.open(url, '_blank');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to start subscription checkout';
+      setError(message);
+      throw err;
+    }
+  }, []);
+
+  const openCustomerPortal = useCallback(async () => {
+    setError(null);
+    try {
+      const { url } = await createCustomerPortalSession();
+      window.open(url, '_blank');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to open billing portal';
+      setError(message);
+      throw err;
+    }
+  }, []);
+
   const applyDeduction = useCallback((newBalance: number) => {
     setCredits((prev) => {
       if (!prev) return prev;
-      return { ...prev, balance: newBalance };
+      // Approximate: we don't know exact pool split, but total is authoritative
+      const diff = prev.balance - newBalance;
+      const subDeduct = Math.min(prev.subscriptionCredits, diff);
+      return {
+        ...prev,
+        balance: newBalance,
+        subscriptionCredits: prev.subscriptionCredits - subDeduct,
+        topupCredits: prev.topupCredits - (diff - subDeduct),
+      };
     });
   }, []);
 
@@ -114,8 +186,12 @@ export const CreditProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     isLoading,
     error,
     canSearch,
+    hasSubscription,
+    isFreeUser,
     refreshBalance,
     purchaseCredits,
+    purchaseSubscription,
+    openCustomerPortal,
     clearError,
     applyDeduction,
   };

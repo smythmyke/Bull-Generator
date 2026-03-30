@@ -444,7 +444,7 @@ const ConceptMapperTab: React.FC = () => {
   const handleProAutoSearch = async () => {
     if (!hasEnabledConcepts) return;
 
-    await withCreditCheck('pro-auto', 2, async () => {
+    await withCreditCheck('pro-auto', 1, async () => {
       setSearchingField('pro-auto');
       setError('');
 
@@ -532,7 +532,7 @@ const ConceptMapperTab: React.FC = () => {
   const handleProInteractiveSearch = async () => {
     if (!hasEnabledConcepts) return;
 
-    await withCreditCheck('pro-interactive', 3, async () => {
+    await withCreditCheck('pro-interactive', 2, async () => {
       setSearchingField('pro-interactive');
       setError('');
 
@@ -798,9 +798,9 @@ const ConceptMapperTab: React.FC = () => {
           </div>
           <div className="grid grid-cols-3 gap-1 p-1 bg-secondary/30 rounded-lg">
             {([
-              { depth: 'quick' as SearchDepth, label: 'Quick', desc: `${getStrategyCreditCost('quick', searchStrategy)} credit${getStrategyCreditCost('quick', searchStrategy) > 1 ? 's' : ''}` },
-              { depth: 'pro-auto' as SearchDepth, label: 'Pro Auto', desc: `${getStrategyCreditCost('pro-auto', searchStrategy)} credits` },
-              { depth: 'pro-interactive' as SearchDepth, label: 'Pro Interactive', desc: `${getStrategyCreditCost('pro-interactive', searchStrategy)} credits` },
+              { depth: 'quick' as SearchDepth, label: 'Quick', desc: 'Free' },
+              { depth: 'pro-auto' as SearchDepth, label: 'Pro Auto', desc: '1 credit' },
+              { depth: 'pro-interactive' as SearchDepth, label: 'Pro Interactive', desc: '2 credits' },
             ]).map(({ depth, label, desc }) => (
               <button
                 key={depth}

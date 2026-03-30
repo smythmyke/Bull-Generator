@@ -91,18 +91,23 @@ export const ai = functions.https.onRequest((req, res) => {
       // AI endpoints — deduct credits server-side BEFORE processing
       const db = admin.firestore();
 
-      if (!FREE_ENDPOINTS.has(path)) {
-        // Rate limit only paid endpoints (free endpoints like synonyms/definitions are exempt)
+      // Determine credit cost: client can pass creditCost (0 for quick searches),
+      // defaults to 1 for backward compat. Free endpoints always cost 0.
+      const isFreeEndpoint = FREE_ENDPOINTS.has(path);
+      const creditCost = isFreeEndpoint ? 0 :
+        (typeof req.body?.creditCost === "number" ? Math.max(0, Math.floor(req.body.creditCost)) : 1);
+
+      if (creditCost > 0) {
+        // Rate limit only paid operations
         if (!checkRateLimit(decodedToken.uid)) {
           res.status(429).json({error: "Rate limit exceeded. Try again in an hour."});
           return;
         }
-        // Paid endpoint: deduct 1 credit per AI call, server-side
-        const deductResult = await useCredit(db, decodedToken.uid, `ai:${path}`, 1);
+        const deductResult = await useCredit(db, decodedToken.uid, `ai:${path}`, creditCost);
         const result = await handleAIRequest(path, req.body);
         res.status(200).json({data: result, credits: deductResult});
       } else {
-        // Free endpoint (synonyms, definitions): no credit deduction, no rate limit
+        // Free endpoint or zero-cost search (quick depth)
         const result = await handleAIRequest(path, req.body);
         res.status(200).json({data: result});
       }
