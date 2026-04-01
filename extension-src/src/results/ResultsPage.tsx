@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuthContext } from '../contexts/AuthContext';
 import { rankPatents, RankedPatent, PatentForRanking, Snippet } from '../services/apiService';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs';
@@ -124,6 +124,72 @@ function getFoundByBadge(source: string): { color: string; label: string } | nul
     return { color: 'bg-cyan-50 text-cyan-700 border-cyan-200', label: `similar:${shortId}` };
   }
   return null;
+}
+
+const RANKING_TIPS: { category: string; icon: string; text: string }[] = [
+  { category: 'Patent Law', icon: '\u2696\uFE0F', text: '35 USC 101 defines patentable subject matter: processes, machines, manufactures, and compositions of matter.' },
+  { category: 'Patent Law', icon: '\u2696\uFE0F', text: '35 USC 102 (Novelty): Your invention must be new \u2014 not previously disclosed in any public document worldwide.' },
+  { category: 'Patent Law', icon: '\u2696\uFE0F', text: '35 USC 103 (Non-obviousness): Your invention can\'t be an obvious combination of existing prior art.' },
+  { category: 'Patent Law', icon: '\u2696\uFE0F', text: '35 USC 112 requires a written description enabling someone skilled in the art to make and use the invention.' },
+  { category: 'Patent Law', icon: '\u2696\uFE0F', text: 'Provisional patent applications give you 12 months of "patent pending" status before filing a full application.' },
+  { category: 'Patent Law', icon: '\u2696\uFE0F', text: 'The America Invents Act (2011) changed the US from "first to invent" to "first inventor to file."' },
+  { category: 'Did You Know?', icon: '\uD83D\uDCA1', text: 'The first US patent was granted in 1790 to Samuel Hopkins for a process of making potash.' },
+  { category: 'Did You Know?', icon: '\uD83D\uDCA1', text: 'Amazon holds a patent on one-click purchasing (US5960411), granted in 1999.' },
+  { category: 'Did You Know?', icon: '\uD83D\uDCA1', text: 'The average US patent takes 23.3 months from filing to grant.' },
+  { category: 'Did You Know?', icon: '\uD83D\uDCA1', text: 'Thomas Edison held 1,093 US patents \u2014 the most by any individual inventor until 2003.' },
+  { category: 'Did You Know?', icon: '\uD83D\uDCA1', text: 'Design patents last 15 years from grant; utility patents last 20 years from the earliest filing date.' },
+  { category: 'Did You Know?', icon: '\uD83D\uDCA1', text: 'China surpassed the US in patent filings in 2011 and now files over 2x as many annually.' },
+  { category: 'Did You Know?', icon: '\uD83D\uDCA1', text: 'The word "patent" comes from the Latin "patere" meaning "to lay open" \u2014 patents disclose inventions publicly.' },
+  { category: 'Did You Know?', icon: '\uD83D\uDCA1', text: 'Patent trolls (NPEs) account for over 60% of all patent lawsuits in the United States.' },
+  { category: 'Search Tip', icon: '\uD83D\uDD0D', text: 'Check the claims section of results \u2014 that\'s where the legal scope of protection is defined.' },
+  { category: 'Search Tip', icon: '\uD83D\uDD0D', text: 'CPC codes help narrow results to your technology domain. Look at top results\' CPCs for ideas.' },
+  { category: 'Search Tip', icon: '\uD83D\uDD0D', text: 'Patents use formal language: "apparatus" not "device", "comprising" not "having", "plurality" not "multiple".' },
+  { category: 'Search Tip', icon: '\uD83D\uDD0D', text: 'Backward citations reveal prior art the examiner considered. Forward citations show who built on the patent.' },
+  { category: 'Search Tip', icon: '\uD83D\uDD0D', text: 'Try shuffling your boolean queries and re-running \u2014 different synonym combinations catch different patents.' },
+  { category: 'Industry', icon: '\uD83C\uDFEB', text: 'Patent examiners at the USPTO review an average of 87 applications per year.' },
+  { category: 'Industry', icon: '\uD83C\uDFEB', text: 'The average patent attorney salary in the US is around $180,000 per year.' },
+  { category: 'Industry', icon: '\uD83C\uDFEB', text: 'Over 3.5 million patent applications are filed globally each year across all patent offices.' },
+  { category: 'Industry', icon: '\uD83C\uDFEB', text: 'A single US patent application costs $10,000\u2013$15,000 on average in attorney and filing fees.' },
+];
+
+function RotatingTip() {
+  const [index, setIndex] = useState(() => Math.floor(Math.random() * RANKING_TIPS.length));
+  const [fade, setFade] = useState(true);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setFade(false);
+      setTimeout(() => {
+        setIndex(prev => (prev + 1) % RANKING_TIPS.length);
+        setFade(true);
+      }, 300);
+    }, 6000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const tip = RANKING_TIPS[index];
+  return (
+    <div className={`max-w-md mx-auto transition-opacity duration-300 ${fade ? 'opacity-100' : 'opacity-0'}`}>
+      <div className="bg-card border rounded-xl p-5 shadow-sm">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-lg">{tip.icon}</span>
+          <span className="text-xs font-semibold text-primary uppercase tracking-wide">{tip.category}</span>
+        </div>
+        <p className="text-sm text-muted-foreground leading-relaxed">{tip.text}</p>
+      </div>
+      <div className="flex justify-center gap-1 mt-3">
+        {Array.from({ length: Math.min(5, RANKING_TIPS.length) }).map((_, i) => {
+          const dotIndex = (Math.floor(index / 5) * 5 + i) % RANKING_TIPS.length;
+          return (
+            <div
+              key={i}
+              className={`h-1 rounded-full transition-all duration-300 ${dotIndex === index ? 'w-4 bg-primary' : 'w-1 bg-muted-foreground/30'}`}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 const ResultsPage: React.FC = () => {
@@ -404,17 +470,29 @@ const ResultsPage: React.FC = () => {
     return 'bg-red-500';
   };
 
-  if (status === 'loading' || status === 'ranking') {
+  if (status === 'loading') {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center space-y-4">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto" />
           <p className="text-lg font-medium">{statusMessage}</p>
-          {status === 'ranking' && (
-            <p className="text-sm text-muted-foreground">
-              Gemini AI is analyzing patent relevance and extracting evidence...
-            </p>
-          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (status === 'ranking') {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-6">
+        <div className="text-center space-y-6 w-full max-w-lg">
+          <div className="space-y-2">
+            <div className="flex items-center justify-center gap-3">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+              <p className="text-lg font-semibold">Analyzing Patents</p>
+            </div>
+            <p className="text-sm text-muted-foreground">{statusMessage}</p>
+          </div>
+          <RotatingTip />
         </div>
       </div>
     );

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AI Patent Search Generator: Boolean Queries, Prior Art, Google Patents",
-  "version": "2.3.0",
+  "version": "2.3.1",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA33r/weMc6jifrE5BUNuC0e0wdTFa+RXPviC8v53lhgkxgclx2s9W+/GoGoqV3s+LJ6RvU+xx4eUjvAbnP0svpSWjixJXFQk8f6dX4yBxFd0aCDYo3RjsK9JeNmHXrqdRDUIVmiwd5qLQFLjEbpbG21HGFlGRtoR9bzX/05lJd8cRzXdxuQX9A+Oqkwfc/sYq2JkijeRTkHToVTfcb1M6q8b0RPaDKN5W+8UKOufE99CyaHladAnsF8OvWCbmBU8d5f6+OV4xJfzgNQqgRMgsMbWtqjDWVIOLkMMxNPesl1aCM3HGVCEi2iLDGEqqo4Ip6cFgecm5rfikW1IQ077krQIDAQAB",
   "description": "AI-powered patent search assistant. Generate boolean queries, extract concepts, rank results, and produce prior art reports.",
   "action": {

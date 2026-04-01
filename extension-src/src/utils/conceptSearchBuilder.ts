@@ -63,8 +63,7 @@ export function buildSearchesFromConcepts(
 
 /**
  * Build a search query that appends CPC code filters.
- * Google Patents uses semicolon-separated CPC codes, not inline `cpc=` syntax.
- * Format: (search terms);(CPC_CODE1);(CPC_CODE2)
+ * Google Patents format: cpc:(CODE1 OR CODE2)
  */
 export function buildSearchWithCPCCodes(
   concepts: ConceptForSearch[],
@@ -75,9 +74,8 @@ export function buildSearchWithCPCCodes(
   if (!base) return "";
   if (cpcCodes.length === 0) return base;
 
-  // Semicolon-separated CPC codes — Google Patents advanced search syntax
-  const cpcSuffix = cpcCodes.map(c => `(${c})`).join(";");
-  return `${base};${cpcSuffix}`;
+  const cpcClause = `cpc:(${cpcCodes.join(" OR ")})`;
+  return `${base} AND ${cpcClause}`;
 }
 
 export interface RefinedConceptForSearch {
@@ -113,9 +111,8 @@ export function buildSearchFromRefinedConcepts(
 
   if (allCPCs.size === 0) return base;
 
-  // Semicolon-separated CPC codes — Google Patents advanced search syntax
-  const cpcSuffix = Array.from(allCPCs).map(c => `(${c})`).join(";");
-  return `${base};${cpcSuffix}`;
+  const cpcClause = `cpc:(${Array.from(allCPCs).join(" OR ")})`;
+  return `${base} AND ${cpcClause}`;
 }
 
 // ── Field Operators ──

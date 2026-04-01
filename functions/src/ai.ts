@@ -2,6 +2,61 @@ import {GoogleGenerativeAI} from "@google/generative-ai";
 // BigQuery/Google Patents enrichment disabled — import removed
 // Gemini API key updated to Tier 2 (March 2026)
 
+function safeParseJSON(content: string): any {
+  const sanitized = content
+    .replace(/,\s*([\]}])/g, "$1")
+    .replace(/[\x00-\x1f]/g, (ch: string) => ch === "\n" || ch === "\t" ? ch : "");
+
+  // Attempt 1: direct parse
+  try { return JSON.parse(sanitized); } catch { /* fall through */ }
+
+  // Attempt 2: extract JSON object
+  const objMatch = sanitized.match(/\{[\s\S]*\}/);
+  if (objMatch) {
+    try { return JSON.parse(objMatch[0].replace(/,\s*([\]}])/g, "$1")); } catch { /* fall through */ }
+  }
+
+  // Attempt 3: extract JSON array
+  const arrMatch = sanitized.match(/\[[\s\S]*\]/);
+  if (arrMatch) {
+    try { return JSON.parse(arrMatch[0].replace(/,\s*([\]}])/g, "$1")); } catch { /* fall through */ }
+  }
+
+  // Attempt 4: repair truncated JSON — close open strings, arrays, objects
+  let repaired = sanitized;
+  // If truncated mid-string, close the string
+  const quoteCount = (repaired.match(/"/g) || []).length;
+  if (quoteCount % 2 !== 0) repaired += '"';
+  // Close unclosed brackets/braces
+  const opens = (repaired.match(/[\[{]/g) || []).length;
+  const closes = (repaired.match(/[\]}]/g) || []).length;
+  for (let i = 0; i < opens - closes; i++) {
+    // Determine if last open was [ or {
+    const lastOpen = repaired.lastIndexOf('[') > repaired.lastIndexOf('{') ? ']' : '}';
+    repaired += lastOpen;
+  }
+  repaired = repaired.replace(/,\s*([\]}])/g, "$1");
+  try { return JSON.parse(repaired); } catch { /* fall through */ }
+
+  // Attempt 5: extract and repair the object portion
+  const objMatch2 = repaired.match(/\{[\s\S]*/);
+  if (objMatch2) {
+    let fragment = objMatch2[0];
+    const qc = (fragment.match(/"/g) || []).length;
+    if (qc % 2 !== 0) fragment += '"';
+    const ob = (fragment.match(/\{/g) || []).length;
+    const cb = (fragment.match(/\}/g) || []).length;
+    for (let i = 0; i < ob - cb; i++) fragment += '}';
+    const osb = (fragment.match(/\[/g) || []).length;
+    const csb = (fragment.match(/\]/g) || []).length;
+    for (let i = 0; i < osb - csb; i++) fragment += ']';
+    fragment = fragment.replace(/,\s*([\]}])/g, "$1");
+    try { return JSON.parse(fragment); } catch { /* fall through */ }
+  }
+
+  throw new Error(`JSON parse failed. First 300 chars: ${content.substring(0, 300)}`);
+}
+
 // Get API key from environment (.env file deployed with functions)
 function getApiKey(): string {
   const key = process.env.GEMINI_API_KEY;
@@ -129,7 +184,7 @@ Follow the schema exactly. Return ONLY valid JSON, no markdown.`,
     }],
     generationConfig: {
       temperature: 0.1,
-      maxOutputTokens: 1000,
+      maxOutputTokens: 4000,
       responseMimeType: "application/json",
     },
   });
@@ -139,7 +194,7 @@ Follow the schema exactly. Return ONLY valid JSON, no markdown.`,
     throw new Error("Empty response from Gemini API");
   }
 
-  return JSON.parse(content);
+  return safeParseJSON(content);
 }
 
 // ── Synonym Lookup ──
@@ -174,7 +229,7 @@ Generate technical synonyms for: ${word}`,
     }],
     generationConfig: {
       temperature: 0.1,
-      maxOutputTokens: 500,
+      maxOutputTokens: 4000,
       responseMimeType: "application/json",
     },
   });
@@ -184,7 +239,7 @@ Generate technical synonyms for: ${word}`,
     throw new Error("Empty response from Gemini API");
   }
 
-  return JSON.parse(content);
+  return safeParseJSON(content);
 }
 
 // ── Definition Lookup ──
@@ -220,7 +275,7 @@ Define this term: ${word}`,
     }],
     generationConfig: {
       temperature: 0.1,
-      maxOutputTokens: 300,
+      maxOutputTokens: 4000,
       responseMimeType: "application/json",
     },
   });
@@ -230,7 +285,7 @@ Define this term: ${word}`,
     throw new Error("Empty response from Gemini API");
   }
 
-  return JSON.parse(content);
+  return safeParseJSON(content);
 }
 
 // ── Paragraph Analysis ──
@@ -299,7 +354,7 @@ Analyze this paragraph and generate a comprehensive patent search string. Keep e
     }],
     generationConfig: {
       temperature: 0.2,
-      maxOutputTokens: 1000,
+      maxOutputTokens: 4000,
       responseMimeType: "application/json",
     },
   });
@@ -309,7 +364,7 @@ Analyze this paragraph and generate a comprehensive patent search string. Keep e
     throw new Error("Empty response from Gemini API");
   }
 
-  return JSON.parse(content);
+  return safeParseJSON(content);
 }
 
 // ── Optimize Query for Google Patents ──
@@ -357,7 +412,7 @@ User's search description: "${text}"`,
     }],
     generationConfig: {
       temperature: 0.2,
-      maxOutputTokens: 500,
+      maxOutputTokens: 4000,
       responseMimeType: "application/json",
     },
   });
@@ -367,7 +422,7 @@ User's search description: "${text}"`,
     throw new Error("Empty response from Gemini API");
   }
 
-  let parsed = JSON.parse(content);
+  let parsed = safeParseJSON(content);
 
   // Gemini sometimes wraps the response in an array — unwrap it
   if (Array.isArray(parsed)) {
@@ -458,6 +513,11 @@ For each patent, provide:
   * Technical equivalence (same inventive concept even if different terminology)
   * Scope matching (how well the patent's scope overlaps the query's intent)
   * Synonym/related-concept recognition
+  * CRITICAL — Concept completeness: identify which major concepts from the query are present vs absent in the patent. Score caps based on coverage:
+    - Covers ALL key concepts: eligible for 70-100
+    - Missing 1 key concept: cap at 50 max
+    - Missing 2+ key concepts: cap at 30 max
+    - Only matches generic/broad terms (e.g. "device", "method", "system") without the specific domain: cap at 20 max
 - "reasoning": 1 sentence explaining the semantic relevance
 - "snippets": 1-2 direct quotes from the patent's abstract or claims that prove relevance. Each snippet must have:
   - "source": either "abstract" or "claim" (where the quote comes from)
@@ -485,10 +545,11 @@ Return JSON matching this schema exactly:
 
 Ranking criteria (in order of importance):
 1. Title and abstract directly address the search query concepts
-2. Claims cover the query's technical scope (patents) or content directly addresses the topic (NPL)
-3. CPC codes align with the technology domain (patents only)
-4. Specificity - results focused on the exact topic rank higher than broad/tangential ones
-5. For non-patent literature (NPL): citation count is a strong relevance signal. Papers with 50+ citations are well-established in the field. Papers with 200+ citations are seminal works. Include citation count in your reasoning if notable.
+2. Concept completeness — the patent must address ALL major concepts in the query, not just a subset. A patent about "inflatable medical implants" should score very low for a query about "flotation device for animals" even though both involve inflation. Missing the core domain is a severe penalty.
+3. Claims cover the query's technical scope (patents) or content directly addresses the topic (NPL)
+4. CPC codes align with the technology domain (patents only)
+5. Specificity - results focused on the exact topic rank higher than broad/tangential ones
+6. For non-patent literature (NPL): citation count is a strong relevance signal. Papers with 50+ citations are well-established in the field. Papers with 200+ citations are seminal works. Include citation count in your reasoning if notable.
 
 IMPORTANT for snippets:
 - Quotes MUST be real substrings from the Abstract or Claim 1 text provided (or from the NPL snippet/abstract)
@@ -574,28 +635,12 @@ ${patentSummaries}`,
     throw new Error("Empty response from Gemini API");
   }
 
-  // Sanitize JSON: fix trailing commas, control chars in strings
-  let sanitized = content
-    .replace(/,\s*([\]}])/g, "$1") // trailing commas
-    .replace(/[\x00-\x1f]/g, (ch) => ch === "\n" || ch === "\t" ? ch : ""); // strip control chars except \n \t
-
   let parsed: { ranked: RankedPatent[] };
   try {
-    parsed = JSON.parse(sanitized);
-  } catch (firstErr) {
-    // Try stripping to just the JSON object
-    const match = sanitized.match(/\{[\s\S]*\}/);
-    if (match) {
-      try {
-        parsed = JSON.parse(match[0].replace(/,\s*([\]}])/g, "$1"));
-      } catch {
-        console.error("Rank JSON parse failed. First 500 chars:", content.substring(0, 500));
-        throw firstErr;
-      }
-    } else {
-      console.error("Rank JSON parse failed — no JSON object found. First 500 chars:", content.substring(0, 500));
-      throw firstErr;
-    }
+    parsed = safeParseJSON(content);
+  } catch (err) {
+    console.error("Rank JSON parse failed after all repair attempts. First 500 chars:", content.substring(0, 500));
+    throw err;
   }
 
   // Gemini sometimes wraps in an array
@@ -940,7 +985,7 @@ ${resultsSummary}`,
     throw new Error("Empty response from Gemini API");
   }
 
-  let parsed = JSON.parse(content);
+  let parsed = safeParseJSON(content);
 
   // Gemini sometimes wraps the response in an array — unwrap it
   if (Array.isArray(parsed)) {
@@ -1050,7 +1095,7 @@ ${conceptsSummary}`,
     }],
     generationConfig: {
       temperature: 0.2,
-      maxOutputTokens: 2000,
+      maxOutputTokens: 4000,
       responseMimeType: "application/json",
     },
   });
@@ -1060,7 +1105,7 @@ ${conceptsSummary}`,
     throw new Error("Empty response from Gemini API");
   }
 
-  let parsed = JSON.parse(content);
+  let parsed = safeParseJSON(content);
 
   if (Array.isArray(parsed)) {
     parsed = parsed[0] || {};
@@ -1081,7 +1126,7 @@ ${conceptsSummary}`,
 
 const EXTRACT_CONCEPTS_PROMPT = `You are a patent search expert that analyzes paragraphs to extract structured technical concepts for patent searching.
 
-Given a paragraph describing an invention or technology, extract 4-8 distinct technical concepts. Each concept should represent a separate searchable idea.
+Given a paragraph describing an invention or technology, extract 3-6 distinct technical concepts. Each concept should represent a separate searchable idea.
 
 IMPORTANT: Each concept must be decomposed into "modifiers" (adjectives, qualifiers, action words that make it specific) and "nouns" (the generic object, component, or thing being described). This enables proximity-based patent searching where modifiers must appear near nouns.
 
@@ -1100,20 +1145,26 @@ Return JSON matching this schema exactly:
 
 Example decomposition:
 - "foldable display" → modifiers: ["foldable", "bendable", "flexible", "folding"], nouns: ["display", "screen", "panel"]
-- "ultrasonic fingerprint sensor" → modifiers: ["ultrasonic", "acoustic", "piezoelectric"], nouns: ["fingerprint sensor", "biometric sensor", "fingerprint reader"]
-- "hinge mechanism" → modifiers: ["hinge", "pivot", "folding", "articulating"], nouns: ["mechanism", "assembly", "module", "linkage"]
-- "image segmentation" → modifiers: ["image", "semantic", "scene", "pixel-level"], nouns: ["segmentation", "classification", "partitioning", "labeling"]
+- "ultrasonic fingerprint sensor" → modifiers: ["ultrasonic", "acoustic", "piezoelectric"], nouns: ["sensor", "reader", "detector"]
+- "water activation" → modifiers: ["water", "liquid", "submersion", "immersion", "moisture"], nouns: ["activation", "triggering", "initiation", "detection"]
+- "animal flotation" → modifiers: ["animal", "pet", "canine", "dog", "feline"], nouns: ["flotation", "buoyancy", "vest", "jacket", "device"]
 
-Rules:
-- Extract 4-8 concepts from the paragraph
-- Each concept gets 3-6 modifiers (specific qualifiers) and 2-4 nouns (generic objects)
-- Modifiers are words that make the concept SPECIFIC — without them, the nouns alone would match too broadly
-- Nouns are the GENERIC thing being described — they need modifiers nearby to be meaningful
-- For single-word concepts (e.g., "beamforming"), put the specific term in modifiers and generic category terms in nouns (e.g., modifiers: ["beamforming", "beam-forming"], nouns: ["technique", "method", "processing"])
+CRITICAL RULES FOR MODIFIERS AND NOUNS:
+- Every modifier and noun must be a SIMPLE SINGLE WORD — never hyphenated compounds
+- WRONG: "water-activated", "self-inflating", "moisture-sensitive", "gas-generating"
+- RIGHT: "water", "self", "inflating", "moisture", "sensitive", "gas", "generating"
+- WRONG: "flotation device", "life vest" (multi-word phrases in modifier/noun arrays)
+- RIGHT: "flotation", "device", "life", "vest" as separate entries
+- Use common, simple root words that actually appear in patent claims
+- Think about how a patent examiner would describe this — use their vocabulary
+
+Other rules:
+- Extract 3-6 concepts from the paragraph (fewer, broader concepts are better than many narrow ones)
+- Each concept gets 4-8 modifiers (specific qualifiers) and 3-5 nouns (generic objects)
 - Categories: "device" (physical components/apparatus), "process" (methods/steps/actions), "material" (substances/compositions), "property" (characteristics/parameters), "context" (application domain/field of use)
 - Importance: "high" (core inventive concept), "medium" (supporting technical feature), "low" (background/contextual)
 - Use full words (no truncation wildcards)
-- Synonyms in modifiers and nouns should be technically accurate alternatives a patent examiner would use
+- Synonyms should be technically accurate alternatives a patent examiner would use
 - Return ONLY valid JSON, no markdown.`;
 
 async function extractConcepts(
@@ -1137,7 +1188,7 @@ Analyze this paragraph and extract structured technical concepts: "${paragraph}"
     }],
     generationConfig: {
       temperature: 0.2,
-      maxOutputTokens: 2000,
+      maxOutputTokens: 4000,
       responseMimeType: "application/json",
     },
   });
@@ -1147,7 +1198,7 @@ Analyze this paragraph and extract structured technical concepts: "${paragraph}"
     throw new Error("Empty response from Gemini API");
   }
 
-  let parsed = JSON.parse(content);
+  let parsed = safeParseJSON(content);
 
   // Gemini sometimes wraps the response in an array — unwrap it
   if (Array.isArray(parsed)) {
@@ -1313,7 +1364,7 @@ ${patentSummaries}`,
     throw new Error("Empty response from Gemini API");
   }
 
-  let parsed = JSON.parse(content);
+  let parsed = safeParseJSON(content);
 
   // Gemini sometimes wraps the response in an array — unwrap it
   if (Array.isArray(parsed)) {
@@ -1443,7 +1494,7 @@ ${conceptsSummary}`,
     throw new Error("Empty response from Gemini API");
   }
 
-  let parsed = JSON.parse(content);
+  let parsed = safeParseJSON(content);
 
   if (Array.isArray(parsed)) {
     parsed = parsed[0] || {};
@@ -1613,7 +1664,7 @@ ${patentSummaries}`,
     throw new Error("Empty response from Gemini API");
   }
 
-  let parsed = JSON.parse(content);
+  let parsed = safeParseJSON(content);
   if (Array.isArray(parsed)) {
     parsed = parsed[0] || {};
   }

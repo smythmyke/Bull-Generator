@@ -94,7 +94,7 @@ const CreditPurchase: React.FC<CreditPurchaseProps> = ({ compact = false }) => {
             return (
               <div
                 key={plan.id}
-                className={`relative border rounded-lg p-2.5 text-center space-y-1 transition-colors ${
+                className={`relative border rounded-lg p-2.5 text-center flex flex-col transition-colors ${
                   isCurrent ? 'border-primary bg-primary/5' : 'hover:border-primary/50'
                 }`}
               >
@@ -109,15 +109,15 @@ const CreditPurchase: React.FC<CreditPurchaseProps> = ({ compact = false }) => {
                   </span>
                 )}
                 <div className="text-xs font-bold">{plan.name}</div>
-                <div className="text-lg font-bold text-primary">{plan.price}<span className="text-[10px] font-normal text-muted-foreground">/mo</span></div>
-                <div className="text-xs">{plan.credits} credits</div>
-                {plan.rollover !== null && (
-                  <div className="text-[9px] text-muted-foreground">up to {plan.rollover} rollover</div>
-                )}
+                <div className="text-lg font-bold text-primary mt-1">{plan.price}<span className="text-[10px] font-normal text-muted-foreground">/mo</span></div>
+                <div className="text-xs mt-1">{plan.credits} credits</div>
+                <div className="text-[9px] text-muted-foreground mt-0.5 min-h-[14px]">
+                  {plan.rollover !== null ? `up to ${plan.rollover} rollover` : '\u00A0'}
+                </div>
                 <Button
                   size="sm"
                   variant={isCurrent ? 'outline' : 'default'}
-                  className="w-full h-6 text-[10px]"
+                  className="w-full h-6 text-[10px] mt-auto"
                   onClick={() => handleSubscribe(plan.id)}
                   disabled={loadingId !== null}
                 >

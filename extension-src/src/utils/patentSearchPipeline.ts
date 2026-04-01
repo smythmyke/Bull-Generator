@@ -2,6 +2,7 @@ import { optimizeQuery, enrichNPL, EnrichedNPLItem, analyzeRound, AnalyzeRoundRe
 import { ConceptForSearch, buildGroup } from "./conceptSearchBuilder";
 import { buildTelescopingQueries, buildOnionRingQueries, buildFacetedQueries, getStrategyCreditCost } from "./searchStrategy";
 import { mergeConcepts, MergeableConcept, MergeResult } from "./conceptMerger";
+import { scoreConceptCoverage } from "./scoringUtils";
 
 /** Thrown when Google Patents is unavailable (503, error pages, etc.) */
 export class GoogleUnavailableError extends Error {
@@ -52,10 +53,10 @@ export function sanitizeForGooglePatents(query: string): string {
   q = q.replace(/\s{2,}/g, " ");
   q = q.trim();
 
-  // Append extracted CPC codes using semicolon syntax (Google Patents format)
+  // Append extracted CPC codes using Google Patents cpc:() syntax
   if (cpcCodes.length > 0) {
-    const cpcClause = cpcCodes.map(c => `(${c})`).join(";");
-    q = q ? `${q};${cpcClause}` : cpcClause;
+    const cpcClause = `cpc:(${cpcCodes.join(" OR ")})`;
+    q = q ? `${q} AND ${cpcClause}` : cpcClause;
   }
 
   return q;
@@ -73,18 +74,6 @@ export function sanitizeForGooglePatents(query: string): string {
  */
 export function enforceGooglePatentsLimits(query: string): string {
   let q = query.trim();
-
-  // Separate out semicolon-delimited CPC codes to preserve them
-  // Format: (search terms);(G06F1/1616);(H05K5/023)
-  const cpcParts: string[] = [];
-  if (q.includes(';')) {
-    const semiParts = q.split(';');
-    q = semiParts[0].trim(); // main query is before first semicolon
-    for (let i = 1; i < semiParts.length; i++) {
-      const part = semiParts[i].trim();
-      if (part) cpcParts.push(part);
-    }
-  }
 
   // Split on top-level AND operators
   const andPattern = /\s+AND\s+/gi;
@@ -109,9 +98,9 @@ export function enforceGooglePatentsLimits(query: string): string {
     realParts.push({ text: cleaned, op: i > 0 ? (operators[i - 1] || "AND") : "" });
   }
 
-  // Empirically verified: 5 AND groups + 8 OR/group works (March 2026 curl tests)
-  const MAX_AND_GROUPS = 5;
-  const MAX_TOTAL_OR = 20;
+  // Tested March 2026: 6-8 AND groups work on Google Patents (curl + extension)
+  const MAX_AND_GROUPS = 10;
+  const MAX_TOTAL_OR = 40;
 
   console.log(`[PSG-Enforcer] Input groups: ${realParts.length}`);
   realParts.forEach((p, i) => {
@@ -189,10 +178,6 @@ export function enforceGooglePatentsLimits(query: string): string {
     result += ` AND ${assembledGroups[i].text}`;
   }
 
-  // Re-append CPC codes with semicolon syntax
-  if (cpcParts.length > 0) {
-    result = `${result};${cpcParts.join(";")}`.trim();
-  }
 
   // Final cleanup
   result = result.replace(/\s{2,}/g, " ").trim();
@@ -355,6 +340,10 @@ async function runSingleSearchFull(
           `[PSG] runSingleSearch: SUCCESS - scraped ${response.count} results after ${attempts} attempts`
         );
         return response.results;
+      }
+      if (response?.status === "ok" && response.noResults) {
+        console.log(`[PSG] runSingleSearch: "No results found" detected in DOM, skipping further polls`);
+        return [];
       }
       if (response?.status === "google-unavailable") {
         console.error(`[PSG] runSingleSearch: Google Patents unavailable: ${response.reason}`);
@@ -700,6 +689,157 @@ export async function runTripleSearch(params: TripleSearchParams): Promise<void>
   console.log(`[PSG] ========== TRIPLE SEARCH COMPLETE ==========`);
 }
 
+// ── Unified Telescoping Search ──
+
+export interface UnifiedTelescopingParams {
+  rawText: string;
+  broadQuery: string;
+  moderateQuery: string;
+  narrowQuery: string;
+  enabledQueries: { raw: boolean; broad: boolean; moderate: boolean; narrow: boolean; aiOptimized: boolean };
+  concepts: { name: string; synonyms: string[] }[];
+  originalParagraph: string;
+  onProgress: (progress: ProSearchProgress) => void;
+  cachedAiQuery?: string;
+}
+
+export interface UnifiedTelescopingResult {
+  aiOptimizedQuery?: string;
+}
+
+export async function runUnifiedTelescopingSearch(params: UnifiedTelescopingParams): Promise<UnifiedTelescopingResult> {
+  const { rawText, broadQuery, moderateQuery, narrowQuery, enabledQueries, concepts, originalParagraph, onProgress, cachedAiQuery } = params;
+
+  console.log(`[PSG-Unified] ========== UNIFIED TELESCOPING START ==========`);
+
+  const searchStartTime = Date.now();
+  const searchLog: SearchLogEntry[] = [];
+
+  // Count enabled queries for progress
+  const enabledCount = Object.values(enabledQueries).filter(Boolean).length;
+  let searchIndex = 0;
+
+  // Step 0: Get tab
+  onProgress({ phase: "round1", message: "Opening Google Patents...", percent: 2 });
+  const tabId = await ensurePatentsTab();
+  try {
+    await chrome.tabs.sendMessage(tabId, { type: "ENSURE_SEARCH_CONFIG", includeNPL: true });
+  } catch { /* may fail on landing page */ }
+
+  // Step 1: Start AI optimization in parallel if needed
+  let aiQueryPromise: Promise<string | null> | null = null;
+  if (enabledQueries.aiOptimized && !cachedAiQuery) {
+    aiQueryPromise = optimizeQuery(originalParagraph)
+      .then(r => r.optimizedQuery || null)
+      .catch(err => { console.error("[PSG-Unified] AI optimization failed:", err); return null; });
+  }
+  const aiQuery = cachedAiQuery || null;
+
+  const allResultSets: ResultSet[] = [];
+  let googleUnavailableCount = 0;
+  let totalSearchCount = 0;
+
+  // Helper to run a single query
+  const runQuery = async (label: string, query: string, isRaw = false) => {
+    searchIndex++;
+    const pct = 5 + Math.round((searchIndex / enabledCount) * 55);
+    onProgress({ phase: "round1", message: `Search ${searchIndex}/${enabledCount}: ${label}...`, percent: pct });
+
+    const tabOk = await verifyTab(tabId, `unified-${label}`);
+    if (!tabOk) return;
+
+    const start = Date.now();
+    totalSearchCount++;
+    const finalQuery = isRaw ? query : enforceGooglePatentsLimits(sanitizeForGooglePatents(query));
+    const searchResult = await runSingleSearchFull(tabId, finalQuery, 35);
+    if (searchResult.googleUnavailable) googleUnavailableCount++;
+    const results = searchResult.results;
+    searchLog.push({ round: 1, label, query: finalQuery, resultCount: results.length, durationMs: Date.now() - start });
+
+    if (results.length > 0) {
+      allResultSets.push({ results, source: `round1-${label}` as ProFoundBySource });
+    }
+    console.log(`[PSG-Unified] ${label}: ${results.length} results`);
+  };
+
+  // Step 2: Run enabled queries sequentially
+  if (enabledQueries.raw) await runQuery("Raw text", rawText, true);
+  if (enabledQueries.broad) await runQuery("Broad", broadQuery);
+  if (enabledQueries.moderate) await runQuery("Moderate", moderateQuery);
+  if (enabledQueries.narrow) await runQuery("Narrow", narrowQuery);
+
+  // Resolve AI query
+  let resolvedAiQuery = aiQuery;
+  if (enabledQueries.aiOptimized) {
+    if (aiQueryPromise) {
+      resolvedAiQuery = await aiQueryPromise;
+    }
+    if (resolvedAiQuery && resolvedAiQuery.length > 10) {
+      await runQuery("AI-optimized", resolvedAiQuery);
+    } else {
+      console.warn("[PSG-Unified] AI optimization produced no usable query, skipping");
+    }
+  }
+
+  // Check Google availability
+  if (totalSearchCount > 0 && googleUnavailableCount >= totalSearchCount) {
+    throw new Error("Google Patents is temporarily unavailable. Please try again later.");
+  }
+
+  // Step 3: Deduplicate
+  onProgress({ phase: "deep-scrape", message: "Deduplicating results...", percent: 65 });
+  const mergedMap = deduplicatePatents(allResultSets);
+  console.log(`[PSG-Unified] Merged: ${mergedMap.size} unique patents from ${totalSearchCount} searches`);
+
+  if (mergedMap.size === 0) {
+    throw new Error("No results found. Try adjusting your concepts or enabling more queries.");
+  }
+
+  // Step 4: Deep scrape
+  onProgress({ phase: "deep-scrape", message: `Deep scraping ${mergedMap.size} patents...`, percent: 70 });
+  const allFinalPatents = await deepScrapeAndEnrich(tabId, mergedMap, new Set(), (msg) => {
+    onProgress({ phase: "deep-scrape", message: msg, percent: 80 });
+  });
+
+  // Step 5: Store results
+  onProgress({ phase: "done", message: "Opening results page...", percent: 90 });
+  const storagePayload = {
+    patentResults: {
+      query: originalParagraph,
+      patents: allFinalPatents,
+      totalAvailable: 100,
+      page: 1,
+      concepts,
+      searchMeta: {
+        mode: 'quick' as const,
+        strategy: 'telescoping',
+        searchLog,
+        totalSearches: totalSearchCount,
+        uniquePatents: mergedMap.size,
+        durationMs: Date.now() - searchStartTime,
+      },
+    },
+  };
+
+  await chrome.storage.local.set(storagePayload);
+  console.log(`[PSG-Unified] Stored ${allFinalPatents.length} patents`);
+
+  // Open results page
+  const resultsUrl = chrome.runtime.getURL("results.html");
+  const existingTabs = await chrome.tabs.query({ url: resultsUrl });
+  if (existingTabs.length > 0 && existingTabs[0].id) {
+    await chrome.tabs.update(existingTabs[0].id, { active: true });
+    await chrome.tabs.reload(existingTabs[0].id);
+  } else {
+    await chrome.tabs.create({ url: resultsUrl, active: true });
+  }
+
+  onProgress({ phase: "done", message: "Done!", percent: 100 });
+  console.log(`[PSG-Unified] ========== UNIFIED TELESCOPING COMPLETE (${Date.now() - searchStartTime}ms) ==========`);
+
+  return { aiOptimizedQuery: resolvedAiQuery || undefined };
+}
+
 // ── Pro Search Types ──
 
 export type ProFoundBySource =
@@ -756,6 +896,54 @@ export function deduplicatePatents(resultSets: ResultSet[]): Map<string, any & {
   }
 
   return patentMap;
+}
+
+/**
+ * Select diverse similarity anchors by picking patents from different search sources.
+ */
+function selectDiverseAnchors(patents: any[], count: number): string[] {
+  if (patents.length <= count) return patents.map((p: any) => p.patentId);
+
+  const bySource = new Map<string, any[]>();
+  for (const p of patents) {
+    const sources = p.foundBy || ['unknown'];
+    const type = sources[0].replace(/-.*$/, '');
+    if (!bySource.has(type)) bySource.set(type, []);
+    bySource.get(type)!.push(p);
+  }
+
+  const selected: string[] = [];
+  const selectedIds = new Set<string>();
+  const sourceKeys = Array.from(bySource.keys());
+  const sourcePointers = new Map<string, number>();
+  for (const key of sourceKeys) sourcePointers.set(key, 0);
+
+  let sourceIdx = 0;
+  while (selected.length < count && sourceIdx < sourceKeys.length * count) {
+    const key = sourceKeys[sourceIdx % sourceKeys.length];
+    const pointer = sourcePointers.get(key) || 0;
+    const candidates = bySource.get(key)!;
+
+    if (pointer < candidates.length) {
+      const patent = candidates[pointer];
+      if (!selectedIds.has(patent.patentId)) {
+        selected.push(patent.patentId);
+        selectedIds.add(patent.patentId);
+      }
+      sourcePointers.set(key, pointer + 1);
+    }
+    sourceIdx++;
+  }
+
+  for (const p of patents) {
+    if (selected.length >= count) break;
+    if (!selectedIds.has(p.patentId)) {
+      selected.push(p.patentId);
+      selectedIds.add(p.patentId);
+    }
+  }
+
+  return selected;
 }
 
 // ── Search Log ──
@@ -817,8 +1005,8 @@ function buildQueryFromParts(
   let query = groups.join(" AND ");
 
   if (cpcCodes.length > 0) {
-    const cpcSuffix = cpcCodes.map(c => `(${c})`).join(";");
-    query = `${query};${cpcSuffix}`;
+    const cpcClause = `cpc:(${cpcCodes.join(" OR ")})`;
+    query = `${query} AND ${cpcClause}`;
   }
 
   return query;
@@ -1128,18 +1316,29 @@ export async function runProAutoSearch(params: ProAutoSearchParams): Promise<voi
       })),
       topPatentIds: [],
     };
-    topPatentIds = round1Scraped.slice(0, 5).map((p: any) => p.patentId);
+    topPatentIds = selectDiverseAnchors(round1Scraped, 5);
   }
 
-  // Step 4: Similarity searches for top 5 patents
+  // Step 4: Similarity searches — quality gate: only use anchors with good concept coverage
+  const conceptsForCoverage = concepts.filter(c => c.enabled).map(c => ({ name: c.name, synonyms: c.synonyms }));
+  const qualifiedAnchors = topPatentIds.filter(pid => {
+    const patent = round1Scraped.find((p: any) => p.patentId === pid);
+    if (!patent) return false;
+    const text = [patent.abstract || '', patent.fullAbstract || '', patent.title || ''].join(' ');
+    const coverage = scoreConceptCoverage(conceptsForCoverage, text);
+    console.log(`[PSG-Pro] Anchor quality gate: ${pid} coverage=${coverage}%`);
+    return coverage >= 50;
+  });
+  console.log(`[PSG-Pro] Similarity anchors: ${topPatentIds.length} candidates → ${qualifiedAnchors.length} qualified (>=50% concept coverage)`);
+
   onProgress({ phase: "similarity", message: "Running similarity searches...", percent: 45 });
   const similarityResults: ResultSet[] = [];
 
-  for (let i = 0; i < topPatentIds.length; i++) {
-    const patentId = topPatentIds[i];
+  for (let i = 0; i < qualifiedAnchors.length; i++) {
+    const patentId = qualifiedAnchors[i];
     onProgress({
       phase: "similarity",
-      message: `Similarity ${i + 1}/${topPatentIds.length}: ${patentId}...`,
+      message: `Similarity ${i + 1}/${qualifiedAnchors.length}: ${patentId}...`,
       percent: 45 + (i * 10),
     });
 
@@ -1792,6 +1991,30 @@ async function executeQuickDepth(
         break;
       }
     }
+
+    // Always run the narrowest layer (all concepts) if sweet spot stopped early
+    const lastLayerIndex = queries.length - 1;
+    if (sweetSpotLayer !== undefined && sweetSpotLayer < lastLayerIndex) {
+      const narrowQ = queries[lastLayerIndex];
+      onProgress({ phase: "round1", message: `${narrowQ.label} (all concepts): searching...`, percent: 70 });
+
+      const tabOk = await verifyTab(tabId, `onion-layer-narrow`);
+      if (tabOk) {
+        const start = Date.now();
+        totalSearchCount++;
+        const searchResult = await runSingleSearchFull(tabId, narrowQ.query, 35);
+        if (searchResult.googleUnavailable) googleUnavailableCount++;
+        const results = searchResult.results;
+        searchLog.push({ round: 1, label: `${narrowQ.label} (forced)`, query: narrowQ.query, resultCount: results.length, durationMs: Date.now() - start });
+
+        if (results.length > 0) {
+          allResultSets.push({ results, source: `round1-${narrowQ.label}` as ProFoundBySource });
+        }
+        onProgress({ phase: "round1", message: `${narrowQ.label}: ${results.length} results`, percent: 72 });
+        console.log(`[PSG-Strategy] Forced narrowest layer ${lastLayerIndex}: ${results.length} results`);
+      }
+    }
+
     strategyMeta.layersStopped = sweetSpotLayer ?? queries.length - 1;
 
   } else if (strategy === 'faceted') {
@@ -1988,15 +2211,26 @@ async function executeProAutoDepth(
   } catch (err) {
     console.error("[PSG-Strategy] Analysis failed:", err);
     analysisResult = { cpcSuggestions: [], terminologySwaps: [], conceptHealth: [], refinedConcepts: [], topPatentIds: [] };
-    topPatentIds = round1Scraped.slice(0, 5).map((p: any) => p.patentId);
+    topPatentIds = selectDiverseAnchors(round1Scraped, 5);
   }
 
-  // Similarity searches
+  // Similarity searches — quality gate
+  const conceptsForCov2 = concepts.filter(c => c.enabled).map(c => ({ name: c.name, synonyms: c.synonyms }));
+  const qualifiedAnchors2 = topPatentIds.filter(pid => {
+    const patent = round1Scraped.find((p: any) => p.patentId === pid);
+    if (!patent) return false;
+    const text = [patent.abstract || '', patent.fullAbstract || '', patent.title || ''].join(' ');
+    const coverage = scoreConceptCoverage(conceptsForCov2, text);
+    console.log(`[PSG-Strategy] Anchor quality gate: ${pid} coverage=${coverage}%`);
+    return coverage >= 50;
+  });
+  console.log(`[PSG-Strategy] Similarity anchors: ${topPatentIds.length} → ${qualifiedAnchors2.length} qualified`);
+
   onProgress({ phase: "similarity", message: "Running similarity searches...", percent: 48 });
   const similarityResults: ResultSet[] = [];
-  for (let i = 0; i < topPatentIds.length; i++) {
-    const patentId = topPatentIds[i];
-    onProgress({ phase: "similarity", message: `Similarity ${i + 1}/${topPatentIds.length}: ${patentId}...`, percent: 48 + (i * 8) });
+  for (let i = 0; i < qualifiedAnchors2.length; i++) {
+    const patentId = qualifiedAnchors2[i];
+    onProgress({ phase: "similarity", message: `Similarity ${i + 1}/${qualifiedAnchors2.length}: ${patentId}...`, percent: 48 + (i * 8) });
     const tabOk = await verifyTab(tabId, `sim-${i}`);
     if (!tabOk) break;
     const simStart = Date.now();

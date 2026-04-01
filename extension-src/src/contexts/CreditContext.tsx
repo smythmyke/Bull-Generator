@@ -89,17 +89,18 @@ export const CreditProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           // No doc yet — initialize via API (grants starter credits)
           initCreditsApi().then((balance) => {
             setCredits(balance);
-          }).catch(() => {
-            // Fallback: show 5 starter credits optimistically
+          }).catch((err) => {
+            console.error('Failed to initialize credits:', err);
             setCredits({
-              balance: 5,
+              balance: 0,
               subscriptionCredits: 0,
-              topupCredits: 5,
+              topupCredits: 0,
               freeCreditsGranted: false,
               totalUsed: 0,
               totalPurchased: 0,
               subscription: null,
             });
+            setError('Unable to load credits. Please try signing out and back in.');
           });
         }
         setIsLoading(false);

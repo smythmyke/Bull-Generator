@@ -207,13 +207,24 @@ export function scoreClaimPresence(
  */
 export function scoreMultiSource(foundBy: string[], totalQueries?: number): number {
   if (!foundBy || foundBy.length <= 1) return 0;
-  if (totalQueries && totalQueries > 1) {
-    return Math.min(100, Math.round((foundBy.length / totalQueries) * 100));
+
+  const sourceTypes = new Set<string>();
+  for (const src of foundBy) {
+    const match = src.match(/^(round\d+|similar|raw-text|boolean|ai-optimized)/);
+    sourceTypes.add(match ? match[1] : src);
   }
-  // Fallback when total queries unknown
-  if (foundBy.length === 2) return 40;
-  if (foundBy.length === 3) return 65;
-  if (foundBy.length === 4) return 80;
+
+  const independentSources = sourceTypes.size;
+  if (independentSources <= 1) {
+    return Math.min(25, foundBy.length * 8);
+  }
+
+  if (totalQueries && totalQueries > 1) {
+    return Math.min(100, Math.round((independentSources / Math.min(totalQueries, 5)) * 100));
+  }
+
+  if (independentSources === 2) return 50;
+  if (independentSources === 3) return 75;
   return 100;
 }
 
@@ -258,14 +269,14 @@ export function scoreCPCRelevance(_cpcCodes: string[], backwardCitationCount?: n
 // ── Weights ──
 
 const WEIGHTS = {
-  termFrequency: 0.10,
-  titleHits: 0.15,
+  termFrequency: 0.08,
+  titleHits: 0.12,
   proximity: 0.05,
-  coverage: 0.10,
-  conceptCoverage: 0.10,
+  coverage: 0.08,
+  conceptCoverage: 0.22,
   claimPresence: 0.10,
   aiSemantic: 0.20,
-  multiSource: 0.15,
+  multiSource: 0.10,
   cpcRelevance: 0.05,
 };
 

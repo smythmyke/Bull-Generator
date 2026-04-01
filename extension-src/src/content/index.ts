@@ -459,6 +459,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           sendResponse({ status: 'google-unavailable', reason: errorCheck.reason, results: [], count: 0 });
           return;
         }
+        // Check for explicit "no results found" in DOM
+        const bodyText = document.body?.innerText || '';
+        if (/no results found/i.test(bodyText)) {
+          console.log('[Patent Search] SCRAPE_RESULTS: "No results found" detected in DOM');
+          sendResponse({ status: 'ok', results: [], count: 0, noResults: true });
+          return;
+        }
       }
       sendResponse({ status: 'ok', results, count: results.length });
     } catch (err) {

@@ -4,7 +4,7 @@ import { Textarea } from '../ui/textarea';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { Copy, Check, Plus, X, ChevronDown, ChevronUp, Search } from 'lucide-react';
+import { Copy, Check, Plus, X, ChevronDown, ChevronUp, Search, Shuffle } from 'lucide-react';
 import { SearchResultSkeleton } from '../ui/skeleton';
 import { SearchResult } from '../SearchResult';
 import { copyToClipboard } from '../booleanSearchUtils';
@@ -15,6 +15,7 @@ import {
   runProAutoSearch,
   runProInteractiveSearch,
   runStrategyWithDepth,
+  runUnifiedTelescopingSearch,
   GoogleUnavailableError,
   ProSearchProgress,
   RefinementDashboardData,
@@ -84,6 +85,16 @@ const ConceptMapperTab: React.FC = () => {
   const [strategyQueries, setStrategyQueries] = useState<StrategySearchQuery[]>([]);
   const [isGeneratingStrategyQueries, setIsGeneratingStrategyQueries] = useState(false);
 
+  // Unified telescoping state
+  const [enabledQueries, setEnabledQueries] = useState<{
+    raw: boolean; broad: boolean; moderate: boolean; narrow: boolean; aiOptimized: boolean;
+  }>({ raw: true, broad: true, moderate: true, narrow: true, aiOptimized: true });
+  const [shuffleSeeds, setShuffleSeeds] = useState<{
+    broad?: number; moderate?: number; narrow?: number;
+  }>({});
+  const [hasSearched, setHasSearched] = useState(false);
+  const [cachedAiQuery, setCachedAiQuery] = useState<string | null>(null);
+
   // Pro search state
   const [proSearchPhase, setProSearchPhase] = useState('');
   const [proSearchPercent, setProSearchPercent] = useState(0);
@@ -148,14 +159,13 @@ const ConceptMapperTab: React.FC = () => {
 
   // Build preview using the same proximity-paired strategy builders that run at search time
   const strategyPreview = useMemo(() => {
-    const queries = buildTelescopingQueries(conceptsForSearch);
-    // Map to broad/moderate/narrow format for the preview UI
+    const queries = buildTelescopingQueries(conceptsForSearch, shuffleSeeds);
     return {
       broad: queries.find(q => q.label === 'Broad')?.query || '',
       moderate: queries.find(q => q.label === 'Moderate')?.query || '',
       narrow: queries.find(q => q.label === 'Narrow')?.query || '',
     };
-  }, [conceptsForSearch]);
+  }, [conceptsForSearch, shuffleSeeds]);
 
   // Use strategy preview (proximity-paired) for display, fall back to simple if empty
   const generatedSearches = strategyPreview.broad ? strategyPreview : (smartSearches || simpleSearches);
@@ -329,47 +339,61 @@ const ConceptMapperTab: React.FC = () => {
     }, 2000);
   };
 
-  const handleSearch = async (level: 'broad' | 'moderate' | 'narrow') => {
+  const handleShuffle = useCallback((tier: 'broad' | 'moderate' | 'narrow') => {
+    setShuffleSeeds(prev => ({ ...prev, [tier]: Math.floor(Math.random() * 0xFFFFFFFF) }));
+  }, []);
+
+  const handleUnifiedSearch = async () => {
     if (!hasEnabledConcepts) return;
+    const hasAnyEnabled = Object.values(enabledQueries).some(Boolean);
+    if (!hasAnyEnabled) return;
 
-    await withCreditCheck(level, 1, async () => {
-      setSearchingField(level);
-      setSearchProgress('Starting search...');
+    const creditCost = hasSearched ? 0 : 1;
+    await withCreditCheck('unified-telescoping', creditCost, async () => {
+      setSearchingField('unified-telescoping');
       setError('');
+      setProSearchPhase('');
 
-      // Build a keyword-style query from enabled concept names instead of the full paragraph
-      const smartRawText = concepts
-        .filter(c => c.enabled)
-        .map(c => c.name.includes(' ') ? `"${c.name}"` : c.name)
-        .join(' ');
+      const rawText = inputText.trim();
 
       try {
-        await runTripleSearch({
-          rawText: smartRawText,
-          booleanQuery: generatedSearches[level],
-          includeNPL: true,
+        const result = await runUnifiedTelescopingSearch({
+          rawText,
+          broadQuery: generatedSearches.broad,
+          moderateQuery: generatedSearches.moderate,
+          narrowQuery: generatedSearches.narrow,
+          enabledQueries,
           concepts: concepts.filter(c => c.enabled).map(c => ({ name: c.name, synonyms: c.synonyms })),
-          onProgress: (msg) => {
-            if (isMounted.current) setSearchProgress(msg);
+          originalParagraph: inputText.trim(),
+          cachedAiQuery: cachedAiQuery || undefined,
+          onProgress: (progress: ProSearchProgress) => {
+            if (isMounted.current) {
+              setProSearchPhase(progress.phase);
+              setProSearchPercent(progress.percent);
+              setProSearchMessage(progress.message);
+            }
           },
         });
-        if (isMounted.current) setSearchProgress('Done!');
+        if (isMounted.current) {
+          setHasSearched(true);
+          if (result.aiOptimizedQuery && result.aiOptimizedQuery.length > 10) setCachedAiQuery(result.aiOptimizedQuery);
+        }
       } catch (err) {
         if (isMounted.current) {
           setError(err instanceof Error ? err.message : 'Search failed');
         }
       } finally {
-        setTimeout(() => {
-          if (isMounted.current) {
-            setSearchingField(null);
-            setSearchProgress('');
-          }
-        }, 2000);
+        if (isMounted.current) {
+          setSearchingField(null);
+          setProSearchPhase('');
+          setProSearchPercent(0);
+          setProSearchMessage('');
+        }
       }
     });
   };
 
-  // Strategy-based search handler
+  // Strategy-based search handler (for non-telescoping strategies)
   const handleStrategySearch = async () => {
     if (!hasEnabledConcepts) return;
 
@@ -798,7 +822,7 @@ const ConceptMapperTab: React.FC = () => {
           </div>
           <div className="grid grid-cols-3 gap-1 p-1 bg-secondary/30 rounded-lg">
             {([
-              { depth: 'quick' as SearchDepth, label: 'Quick', desc: 'Free' },
+              { depth: 'quick' as SearchDepth, label: 'Quick', desc: '1 credit' },
               { depth: 'pro-auto' as SearchDepth, label: 'Pro Auto', desc: '1 credit' },
               { depth: 'pro-interactive' as SearchDepth, label: 'Pro Interactive', desc: '2 credits' },
             ]).map(({ depth, label, desc }) => (
@@ -908,67 +932,87 @@ const ConceptMapperTab: React.FC = () => {
       {/* F. Strategy Search UI */}
       {hasEnabledConcepts && !showRefinementDashboard && (
         <div className="space-y-2">
-          {/* Quick + Telescoping: show B/M/N preview cards */}
+          {/* Quick + Telescoping: unified 5-query cards */}
           {searchDepth === 'quick' && searchStrategy === 'telescoping' ? (
             <>
-              <div className="flex items-center gap-2">
-                <Label className="text-xs font-semibold">Generated Searches</Label>
-                {isGeneratingSearches && (
-                  <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                    <span className="animate-spin rounded-full h-2.5 w-2.5 border-b border-primary" />
-                    AI optimizing...
-                  </span>
-                )}
-                {smartSearches && !isGeneratingSearches && (
-                  <span className="text-[10px] text-emerald-600 font-medium">AI-enhanced</span>
-                )}
+              <Label className="text-xs font-semibold">Search Queries</Label>
+
+              {/* Raw Text card */}
+              <div className={`border rounded-lg p-2 ${enabledQueries.raw ? 'border-gray-200 bg-gray-50' : 'border-gray-100 bg-gray-50/50 opacity-60'}`}>
+                <div className="flex items-center gap-2 mb-1">
+                  <input type="checkbox" checked={enabledQueries.raw} onChange={() => setEnabledQueries(prev => ({ ...prev, raw: !prev.raw }))} className="h-3 w-3" />
+                  <span className="text-xs font-semibold">Raw Text</span>
+                  <Button variant="ghost" size="sm" className="h-6 px-2 ml-auto" onClick={() => handleCopy(inputText.trim(), 'raw')}>
+                    <Copy className="h-3 w-3 mr-1" /><span className="text-[10px]">{copiedField === 'raw' ? 'Copied!' : 'Copy'}</span>
+                  </Button>
+                </div>
+                <p className="text-[10px] text-muted-foreground break-all">{inputText.trim()}</p>
               </div>
+
+              {/* Boolean tier cards */}
               {(['broad', 'moderate', 'narrow'] as const).map(level => {
                 const search = generatedSearches[level];
                 if (!search) return null;
-                const colorClass = level === 'broad'
-                  ? 'border-green-200 bg-green-50'
-                  : level === 'moderate'
-                    ? 'border-yellow-200 bg-yellow-50'
-                    : 'border-red-200 bg-red-50';
-                const isThisSearching = searchingField === level;
+                const colorClass = enabledQueries[level]
+                  ? (level === 'broad' ? 'border-green-200 bg-green-50' : level === 'moderate' ? 'border-yellow-200 bg-yellow-50' : 'border-red-200 bg-red-50')
+                  : 'border-gray-100 bg-gray-50/50 opacity-60';
                 return (
                   <div key={level} className={`border rounded-lg p-2 ${colorClass}`}>
-                    <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <input type="checkbox" checked={enabledQueries[level]} onChange={() => setEnabledQueries(prev => ({ ...prev, [level]: !prev[level] }))} className="h-3 w-3" />
                       <span className="text-xs font-semibold capitalize">{level}</span>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 px-2"
-                        onClick={() => handleCopy(search, level)}
-                      >
-                        <Copy className="h-3 w-3 mr-1" />
-                        <span className="text-[10px]">{copiedField === level ? 'Copied!' : 'Copy'}</span>
+                      <Button variant="ghost" size="sm" className="h-6 px-2 ml-auto" onClick={() => handleShuffle(level)} title="Shuffle synonyms">
+                        <Shuffle className="h-3 w-3" />
+                      </Button>
+                      <Button variant="ghost" size="sm" className="h-6 px-2" onClick={() => handleCopy(search, level)}>
+                        <Copy className="h-3 w-3 mr-1" /><span className="text-[10px]">{copiedField === level ? 'Copied!' : 'Copy'}</span>
                       </Button>
                     </div>
                     <SearchResult result={search} />
-                    <Button
-                      onClick={() => handleSearch(level)}
-                      disabled={!!searchingField || !canSearch || checkingAction !== null}
-                      className="w-full mt-2 h-9 text-sm font-semibold gap-2"
-                      size="sm"
-                    >
-                      <Search className="h-4 w-4" />
-                      {checkingAction === level ? 'Checking credits...' : isThisSearching ? 'Searching...' : `Search ${level.charAt(0).toUpperCase() + level.slice(1)} (1 credit)`}
-                    </Button>
                   </div>
                 );
               })}
-              {/* Run All button */}
-              <Button
-                onClick={handleStrategySearch}
-                disabled={!!searchingField || !canSearch || checkingAction !== null}
-                className="w-full h-9 text-sm font-semibold gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
-                size="sm"
-              >
-                <Search className="h-4 w-4" />
-                {searchingField?.startsWith('strategy-') ? 'Running All...' : `Run All Telescoping (${getStrategyCreditCost(searchDepth, searchStrategy)} credit)`}
-              </Button>
+
+              {/* AI-Optimized card */}
+              <div className={`border rounded-lg p-2 ${enabledQueries.aiOptimized ? 'border-blue-200 bg-blue-50' : 'border-gray-100 bg-gray-50/50 opacity-60'}`}>
+                <div className="flex items-center gap-2 mb-1">
+                  <input type="checkbox" checked={enabledQueries.aiOptimized} onChange={() => setEnabledQueries(prev => ({ ...prev, aiOptimized: !prev.aiOptimized }))} className="h-3 w-3" />
+                  <span className="text-xs font-semibold">AI-Optimized</span>
+                  {cachedAiQuery && (
+                    <Button variant="ghost" size="sm" className="h-6 px-2 ml-auto" onClick={() => handleCopy(cachedAiQuery, 'aiOptimized')}>
+                      <Copy className="h-3 w-3 mr-1" /><span className="text-[10px]">{copiedField === 'aiOptimized' ? 'Copied!' : 'Copy'}</span>
+                    </Button>
+                  )}
+                </div>
+                <p className="text-[10px] text-muted-foreground">{cachedAiQuery || 'Generated at search time by AI'}</p>
+              </div>
+
+              {/* Unified Search button */}
+              {(() => {
+                const isSearching = searchingField === 'unified-telescoping';
+                const hasAnyEnabled = Object.values(enabledQueries).some(Boolean);
+                return (
+                  <Button
+                    onClick={handleUnifiedSearch}
+                    disabled={!!searchingField || !canSearch || checkingAction !== null || !hasAnyEnabled}
+                    className="w-full h-9 text-sm font-semibold gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
+                    size="sm"
+                  >
+                    <Search className="h-4 w-4" />
+                    {isSearching ? 'Searching...' : hasSearched ? 'Re-run (free)' : 'Search (1 credit)'}
+                  </Button>
+                );
+              })()}
+
+              {/* Progress bar */}
+              {searchingField === 'unified-telescoping' && proSearchMessage && (
+                <div className="space-y-1">
+                  <div className="w-full bg-secondary rounded-full h-1.5">
+                    <div className="bg-primary h-1.5 rounded-full transition-all duration-300" style={{ width: `${proSearchPercent}%` }} />
+                  </div>
+                  <p className="text-[10px] text-muted-foreground text-center">{proSearchMessage}</p>
+                </div>
+              )}
             </>
           ) : (
             <>

@@ -1,5 +1,18 @@
 import { ConceptForSearch, buildGroup } from "./conceptSearchBuilder";
 
+// ── Seeded Shuffle ──
+
+function seededShuffle<T>(arr: T[], seed: number): T[] {
+  const copy = [...arr];
+  let s = seed;
+  for (let i = copy.length - 1; i > 0; i--) {
+    s = (s * 1664525 + 1013904223) & 0xFFFFFFFF;
+    const j = ((s >>> 0) % (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
 // ── Types ──
 
 export type SearchStrategy = 'telescoping' | 'onion-ring' | 'faceted';
@@ -101,13 +114,35 @@ function buildTruncatedOrGroup(terms: string[]): string {
 }
 
 /** Default proximity distance for modifier NEAR noun */
-const NEAR_DISTANCE = 5;
+const NEAR_DISTANCE = 15;
+
+/**
+ * Split hyphenated compound terms into individual words.
+ * e.g., "water-activated" → ["water", "activated"]
+ *       "self-inflating" → ["self", "inflating"]
+ *       "dog" → ["dog"] (unchanged)
+ */
+function splitHyphenatedTerms(terms: string[]): string[] {
+  const result: string[] = [];
+  for (const t of terms) {
+    if (t.includes('-')) {
+      for (const part of t.split('-')) {
+        const trimmed = part.trim();
+        if (trimmed.length >= 3) result.push(trimmed);
+      }
+    } else {
+      result.push(t);
+    }
+  }
+  // Deduplicate
+  return [...new Set(result)];
+}
 
 /**
  * Build a concept search group using proximity pairing when modifiers/nouns are available.
  *
  * With modifiers + nouns (new AI format):
- *   (foldable$ OR bendable$ OR flexible$) NEAR/5 (device$ OR phone$ OR apparatus$)
+ *   (foldable$ OR bendable$ OR flexible$) NEAR/15 (device$ OR phone$ OR apparatus$)
  *   This ensures generic nouns only match when near specific modifiers.
  *
  * Without modifiers/nouns (legacy flat synonyms):
@@ -120,20 +155,32 @@ function buildConceptGroup(
   concept: ConceptForSearch,
   maxModifiers: number = 6,
   maxNouns: number = 4,
+  shuffleSeed?: number,
 ): string {
   const mods = concept.modifiers;
   const nouns = concept.nouns;
 
   // If we have modifiers + nouns, build proximity pair
   if (mods && mods.length > 0 && nouns && nouns.length > 0) {
-    const modGroup = buildTruncatedOrGroup(mods.slice(0, maxModifiers));
-    const nounGroup = buildTruncatedOrGroup(nouns.slice(0, maxNouns));
+    // Split hyphenated and multi-word terms into single words
+    const cleanMods = splitHyphenatedTerms(mods).flatMap(t => t.includes(' ') ? t.split(/\s+/).filter(w => w.length >= 3) : [t]);
+    const cleanNouns = splitHyphenatedTerms(nouns).flatMap(t => t.includes(' ') ? t.split(/\s+/).filter(w => w.length >= 3) : [t]);
+    const dedupedMods = [...new Set(cleanMods)];
+    const dedupedNouns = [...new Set(cleanNouns)];
+    const orderedMods = shuffleSeed !== undefined ? seededShuffle(dedupedMods, shuffleSeed) : dedupedMods;
+    const orderedNouns = shuffleSeed !== undefined ? seededShuffle(dedupedNouns, shuffleSeed + 7) : dedupedNouns;
+    const modGroup = buildTruncatedOrGroup(orderedMods.slice(0, maxModifiers));
+    const nounGroup = buildTruncatedOrGroup(orderedNouns.slice(0, maxNouns));
     return `(${modGroup} NEAR/${NEAR_DISTANCE} ${nounGroup})`;
   }
 
-  // Legacy fallback: flat OR group from name + synonyms
-  const terms = [concept.name, ...concept.synonyms];
-  return buildTruncatedOrGroup(terms);
+  // Legacy fallback: flat OR group from synonyms only (no concept name)
+  const terms = [...concept.synonyms];
+  if (terms.length === 0) terms.push(concept.name);
+  const cleanTerms = splitHyphenatedTerms(terms).flatMap(t => t.includes(' ') ? t.split(/\s+/).filter(w => w.length >= 3) : [t]);
+  const dedupedTerms = [...new Set(cleanTerms)];
+  const orderedTerms = shuffleSeed !== undefined ? seededShuffle(dedupedTerms, shuffleSeed) : dedupedTerms;
+  return buildTruncatedOrGroup(orderedTerms.slice(0, maxModifiers + maxNouns));
 }
 
 // ── Telescoping Strategy ──
@@ -144,25 +191,23 @@ function buildConceptGroup(
  * - Moderate: top 2-3 concepts, slightly fewer terms
  * - Narrow: top 2 concepts, minimal terms (most restrictive)
  */
-export function buildTelescopingQueries(concepts: ConceptForSearch[]): StrategyQuery[] {
+export function buildTelescopingQueries(
+  concepts: ConceptForSearch[],
+  shuffleSeeds?: { broad?: number; moderate?: number; narrow?: number },
+): StrategyQuery[] {
   const enabled = concepts.filter(c => c.enabled);
   if (enabled.length === 0) return [];
 
   const sorted = sortByImportance(enabled);
 
-  // Broad: top 2, full modifiers/nouns
-  const broadConcepts = sorted.slice(0, 2);
-  const broadGroups = broadConcepts.map(c => buildConceptGroup(c, 6, 4));
+  // All tiers use ALL concepts — tier difference is synonym breadth only
+  const broadGroups = sorted.map(c => buildConceptGroup(c, 6, 4, shuffleSeeds?.broad));
   const broad = broadGroups.join(" AND ");
 
-  // Moderate: top 3, slightly fewer terms
-  const modConcepts = sorted.slice(0, Math.min(3, sorted.length));
-  const modGroups = modConcepts.map(c => buildConceptGroup(c, 4, 3));
+  const modGroups = sorted.map(c => buildConceptGroup(c, 4, 3, shuffleSeeds?.moderate));
   const moderate = modGroups.join(" AND ");
 
-  // Narrow: top 2, minimal terms
-  const narrowConcepts = sorted.slice(0, 2);
-  const narrowGroups = narrowConcepts.map(c => buildConceptGroup(c, 3, 2));
+  const narrowGroups = sorted.map(c => buildConceptGroup(c, 2, 1, shuffleSeeds?.narrow));
   const narrow = narrowGroups.join(" AND ");
 
   return [
@@ -188,18 +233,18 @@ export function buildOnionRingQueries(concepts: ConceptForSearch[]): StrategyQue
   const sorted = sortByImportance(enabled);
   const queries: StrategyQuery[] = [];
 
-  // Start with 2 concepts, add one at a time (empirical limit: 5 AND groups)
-  const minGroups = Math.min(2, sorted.length);
-  const maxGroups = Math.min(sorted.length, 5);
+  // All layers use ALL concepts — layers differ by synonym breadth
+  // Broad: 6 mods / 4 nouns, Moderate: 4/3, Narrow: 2/1
+  const layers: { label: string; maxMods: number; maxNouns: number }[] = [
+    { label: 'Layer 0 (broad)', maxMods: 6, maxNouns: 4 },
+    { label: 'Layer 1 (moderate)', maxMods: 4, maxNouns: 3 },
+    { label: 'Layer 2 (narrow)', maxMods: 2, maxNouns: 1 },
+  ];
 
-  for (let count = minGroups; count <= maxGroups; count++) {
-    const subset = sorted.slice(0, count);
-    const groups = subset.map(c => buildConceptGroup(c, 5, 4));
+  for (const layer of layers) {
+    const groups = sorted.map(c => buildConceptGroup(c, layer.maxMods, layer.maxNouns));
     const query = groups.join(" AND ");
-    queries.push({
-      label: `Layer ${count - minGroups} (${count} concepts)`,
-      query,
-    });
+    queries.push({ label: layer.label, query });
   }
 
   return queries;
