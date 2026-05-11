@@ -1,8 +1,10 @@
 # Patent Firm Feature Research
 
 > Beyond patent search: features patent firms / IP professionals need day-to-day, filtered by what Google Patents already provides vs. what requires other data sources, ranked by frequency of use.
+>
+> **This document is the canonical feature inventory.** Per-patent features are in Parts 1–4. Workflow-agent deliverables (Prior Art Hunter, Claim Analyzer, FTO, Landscape, etc.) are in Part 5. Strategy, pricing math, and validation gating live in [AGENT_SDK.md](../AGENT_SDK.md) and [ROADMAP.md](../ROADMAP.md).
 
-Date compiled: 2026-05-09
+Date compiled: 2026-05-09 · last consolidated: 2026-05-11
 
 ---
 
@@ -190,3 +192,83 @@ Given the existing stack (Gemini proxy + Google Patents scrape + Firebase + side
 6. **Examiner stats lookup** — USPTO PatentsView, strategy use case
 
 The top 3 require zero new data integration. Items 4–6 unlock the USPTO ODP layer, which then enables most of Tier 2 and the prosecution-heavy Tier 3 features as marginal additions.
+
+---
+
+## Part 5 — Workflow agents (one-shot deliverables)
+
+> *Different mental model from Parts 1–4.* Parts 1–4 enumerate **per-patent features** that live inside a session (open the Patent tab, look stuff up). Part 5 enumerates **one-shot deliverables** — a user provides input (an invention description, a product brief, a technology area), an agent produces a complete report. Higher unit price, longer execution time, asynchronous delivery. Surfaced through the Workflows side-panel tab.
+
+Source: [AGENT_SDK.md](../AGENT_SDK.md) (deep flow descriptions, pricing math, starter code) and [ROADMAP.md](../ROADMAP.md) (phased rollout, validation gating).
+
+### Priority workflow agents (defined)
+
+| # | Agent | Input | Output | Price / run | Build priority |
+|---|---|---|---|---|---|
+| W1 | **Prior Art Hunter** | Invention description | Ranked top-10 prior art report with verified citations + relevance reasoning + gaps analysis | $29 (short) / $99 (detailed) | #1 — easiest, biggest market |
+| W2 | **Claim Analyzer** | Patent application PDF or text | Claim-by-claim novelty analysis with closest reference + suggested rewording for weak claims | $49 per application | #2 — harder; PDF parsing + deep claim interp |
+| W3 | **Freedom-to-Operate (FTO)** | Product description | Active-patent infringement risk matrix (high/med/low per identified feature) | $99–299 per product | #3 — heavy legal disclaimers required |
+| W4 | **Technology Landscape** | Tech area (e.g. "solid-state batteries for wearables") | Executive landscape report: top assignees, filing trends, key inventors, white space | $199 per report | #4 — different buyer (VC/R&D vs. patent pros) |
+
+**Build sequencing rationale (from ROADMAP.md):** Phase 1 is pricing/willingness-to-pay validation through cold LinkedIn outreach to patent professionals (see ROADMAP for the questions). Only proceed to building agents if 3 of 5 interviewees confirm intent to use at the proposed price. Build CLI first per agent; have a patent expert review output quality before any UI work.
+
+### Future workflow agents (Phase 3 — speculative)
+
+These appear in ROADMAP.md as candidates to revisit quarterly once a priority agent has shipped:
+
+| Agent | One-line | Buyer | Notes |
+|---|---|---|---|
+| **Citation Network** agent | Given a patent, map all forward/backward citations and assess prior-art web | Patent pros, BD | Overlap with Patent Dossier § 5 — could be a deeper variant for invalidity work |
+| **Examiner Rejection Responder** | Analyze an Office Action, draft response arguments | Prosecution attorneys, solo inventors | Highest-AI-value workflow; requires USPTO ODP for file-wrapper context |
+| **Patent Family Tracker** | Monitor assignee filings, alert on new applications in watched areas | BD, competitive intel teams | Recurring subscription opportunity (vs. one-shot reports) |
+| **Translation-Aware Search** | Boolean queries across Japanese/Chinese/Korean patent literature | International prosecution, FTO | EPO Patent Translate / WIPO Translate dependency |
+| **Design Patent Visual Search** | Match design drawings via vision model | Design patent litigators, brand protection | Wait for vision-model quality to mature |
+| **Plain-English Claim Explainer** | Render claim language for non-lawyers (consumer play) | Solo inventors, journalists, students | *Seeded in Patent Dossier § 8 AI Summary already* |
+
+### Workflow tab vs. Patent tab — which surface for what
+
+| Surface | Best for | Live time | Price per call |
+|---|---|---|---|
+| **Patent tab** (per-patent lookup) | "I have a patent number, tell me about it" | Seconds | 3 credits / dossier · 1 credit / AI summary |
+| **Workflows tab** (deliverable) | "I have a brief, produce a report" | Minutes (with progress events) | $29–$299 per run (≥ 30 credits at current ratio) |
+
+The Workflows tab will likely use asynchronous progress streaming (similar to Phase 2D's AI summary loading state, but spanning minutes). Each agent run becomes a row in the "Recent runs" list, clickable to re-open the deliverable.
+
+---
+
+## Part 6 — Build status (as of 2026-05-11)
+
+Maps every feature in this document to where it stands. Update when a section ships or is paused.
+
+### Shipped
+
+| Feature | Source list | Location |
+|---|---|---|
+| Patent family lookup | Tier 1 #1 | Patent Dossier § 3 |
+| Citation network analysis | Tier 1 #2 | Patent Dossier § 5 |
+| Claim tree visualization | Tier 1 #5 | Patent Dossier § 4 |
+| Legal status check | Tier 1 #6 | Patent Dossier § 2 |
+| Classification context (CPC) | adjacent to Tier 1 | Patent Dossier § 6 |
+| Similar patents | adjacent to Tier 1 | Patent Dossier § 7 |
+| AI plain-English summary | Part 5 W3 future (seeded) | Patent Dossier § 8 (Gemini-backed, on-demand) |
+| Export / Print-to-PDF | adjacent | Patent Dossier § 9 |
+
+### Scaffolded but not wired
+
+| Feature | Location | Notes |
+|---|---|---|
+| Workflows tab (4-card grid) | Side-panel `WorkflowsTab.tsx` | Cards visible, disabled, "Coming soon" badge |
+| Patent Dossier ODP sections | `patent.html` § Phase 2 preview | `<details>` placeholders for file wrapper / OAs / examiner stats / IDS gen |
+
+### Defined but not started
+
+- **Tier 1 ODP-dependent**: file wrapper retrieval, office action analysis, IDS generation
+- **Tier 2**: FTO analysis (as a side-panel tool), examiner statistics, claim charting, patent landscape, assignment / title verification
+- **Tier 3**: annuity tracking, PCT national phase deadlines, spec↔claim consistency, claim drafting assistant, reference numeral extraction, patent valuation signals
+- **Tier 4**: IPR/PGR prep, Markman support, patent translation, damages support, inventor tracking, lien check
+- **Workflow agents W1–W4**: Prior Art Hunter, Claim Analyzer, FTO Agent, Technology Landscape Agent
+- **Phase 3 workflow agents**: Citation Network agent, Examiner Rejection Responder, Patent Family Tracker, Translation-Aware Search, Design Patent Visual Search
+
+### Gated on validation
+
+Per ROADMAP.md, the workflow agents (Part 5) are gated on pricing validation interviews. Side-panel features (Parts 1–4) are not — they're judgment calls, not WTP-dependent.
