@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<!--
+  PATENT DOSSIER — STATIC MOCKUP
+  Populated with: US10867416B2 ("Harmonizing composite images using deep learning", Adobe Inc.)
+  Source: research/patent-dossier-spec.md
+  Purpose: lock the layout before wiring data fetchers.
+
+  Data legend in this file:
+    ✓ real    — verified from Google Patents page fetch (see research session log)
+    ◇ illustrative — plausible placeholder content; flagged inline as "ILLUSTRATIVE"
+                       so it's obvious what needs a real-data pass.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>US10867416B2 — Patent Dossier</title>
+<style>
+  :root {
+    --primary: #1e3a5f;
+    --accent: #2563eb;
+    --green: #16a34a;
+    --yellow: #ca8a04;
+    --red: #dc2626;
+    --border: #e2e8f0;
+    --bg-light: #f8fafc;
+    --text: #1e293b;
+    --text-muted: #64748b;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    color: var(--text);
+    line-height: 1.7;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 40px 32px;
+    background: #fff;
+  }
+
+  /* Header */
+  .report-header {
+    border-bottom: 3px solid var(--primary);
+    padding-bottom: 24px;
+    margin-bottom: 32px;
+  }
+  .report-header .eyebrow {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+  }
+  .report-header h1 {
+    font-size: 22px;
+    color: var(--primary);
+    margin-bottom: 4px;
+    letter-spacing: -0.3px;
+  }
+  .report-header .patent-number {
+    font-size: 14px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    color: var(--accent);
+    margin-bottom: 14px;
+  }
+  .status-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+  }
+  .status-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--bg-light);
+    color: var(--text);
+  }
+  .status-chip.active { background: #f0fdf4; border-color: #bbf7d0; color: var(--green); }
+  .status-chip.lapsed { background: #fef2f2; border-color: #fecaca; color: var(--red); }
+  .status-chip.pending { background: #fffbeb; border-color: #fde68a; color: var(--yellow); }
+
+  .report-meta {
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    gap: 6px 16px;
+    font-size: 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px 16px;
+    background: var(--bg-light);
+  }
+  .report-meta dt { color: var(--text-muted); font-weight: 500; }
+  .report-meta dd { font-weight: 600; }
+
+  /* Sections */
+  .section {
+    margin-bottom: 32px;
+    page-break-inside: avoid;
+  }
+  .section-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--primary);
+    border-bottom: 2px solid var(--primary);
+    padding-bottom: 6px;
+    margin-bottom: 10px;
+  }
+  .section-number {
+    display: inline-block;
+    background: var(--primary);
+    color: #fff;
+    font-size: 11px;
+    width: 22px;
+    height: 22px;
+    line-height: 22px;
+    text-align: center;
+    border-radius: 50%;
+    margin-right: 8px;
+  }
+  .section-intro {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-bottom: 14px;
+    padding: 10px 14px;
+    background: #f1f5f9;
+    border-left: 3px solid var(--accent);
+    border-radius: 0 4px 4px 0;
+  }
+  .placeholder-banner {
+    font-size: 11px;
+    color: var(--yellow);
+    margin-bottom: 8px;
+    padding: 6px 10px;
+    background: #fffbeb;
+    border-left: 3px solid var(--yellow);
+    border-radius: 0 4px 4px 0;
+  }
+
+  /* Abstract */
+  .abstract-box {
+    background: var(--bg-light);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px 16px;
+    font-size: 13px;
+    line-height: 1.7;
+    margin-bottom: 14px;
+  }
+  .abstract-box .label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+
+  /* Generic data tables */
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    margin-top: 8px;
+  }
+  .data-table th, .data-table td {
+    border: 1px solid var(--border);
+    padding: 6px 10px;
+    text-align: left;
+    vertical-align: top;
+  }
+  .data-table th {
+    background: var(--bg-light);
+    font-weight: 600;
+    font-size: 10px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    letter-spacing: 0.3px;
+  }
+  .badge {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+  .badge.green { background: #dcfce7; color: var(--green); }
+  .badge.amber { background: #fef9c3; color: var(--yellow); }
+  .badge.red { background: #fee2e2; color: var(--red); }
+  .badge.blue { background: #dbeafe; color: #1d4ed8; }
+  .badge.primary { background: var(--primary); color: #fff; }
+
+  /* Family map */
+  .family-row td:first-child {
+    font-family: 'Consolas', monospace;
+    font-weight: 600;
+    color: var(--accent);
+  }
+
+  /* Claim tree */
+  .claim-tree {
+    list-style: none;
+    font-size: 12px;
+  }
+  .claim-tree > li {
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .claim-tree > li:last-child { border-bottom: none; }
+  .claim-tree .claim-id {
+    display: inline-block;
+    background: var(--accent);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 1px 8px;
+    border-radius: 3px;
+    margin-right: 8px;
+    font-family: 'Consolas', monospace;
+  }
+  .claim-tree .claim-id.dep {
+    background: var(--bg-light);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+  }
+  .claim-tree .deps {
+    margin-left: 20px;
+    margin-top: 4px;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .claim-tree details {
+    margin-top: 6px;
+  }
+  .claim-tree summary {
+    cursor: pointer;
+    color: var(--accent);
+    font-size: 11px;
+  }
+  .claim-tree .claim-text {
+    margin-top: 6px;
+    padding: 8px 12px;
+    background: var(--bg-light);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 4px 4px 0;
+    font-size: 12px;
+    line-height: 1.7;
+  }
+
+  /* Citation network summary */
+  .cite-summary {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .cite-card {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 14px;
+    background: var(--bg-light);
+  }
+  .cite-card .num {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--primary);
+  }
+  .cite-card .label {
+    font-size: 11px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    letter-spacing: 0.3px;
+    margin-bottom: 4px;
+  }
+
+  /* Classification chips */
+  .cpc-chip {
+    display: inline-block;
+    font-family: 'Consolas', monospace;
+    font-size: 11px;
+    padding: 2px 8px;
+    margin: 2px 3px 2px 0;
+    background: var(--bg-light);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--text);
+  }
+  .cpc-chip.primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+  /* AI box */
+  .ai-box {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px 16px;
+    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  }
+  .ai-box .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .ai-box .header .badge {
+    font-size: 10px;
+    background: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
+    color: #fff;
+  }
+  .ai-box p {
+    font-size: 13px;
+    line-height: 1.7;
+    margin-bottom: 10px;
+  }
+  .ai-box p:last-child { margin-bottom: 0; }
+
+  /* Phase 2 hidden sections */
+  .phase2 {
+    border: 1px dashed var(--border);
+    border-radius: 6px;
+    padding: 12px 14px;
+    background: #fafafa;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-style: italic;
+  }
+  .phase2 summary {
+    cursor: pointer;
+    font-style: normal;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .phase2[open] summary {
+    margin-bottom: 8px;
+  }
+
+  /* Export actions */
+  .actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+  }
+  .btn {
+    font-size: 12px;
+    font-weight: 600;
+    padding: 8px 14px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: #fff;
+    color: var(--text);
+    cursor: pointer;
+  }
+  .btn.primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* Footer */
+  .report-footer {
+    margin-top: 40px;
+    padding-top: 16px;
+    border-top: 2px solid var(--primary);
+    font-size: 10px;
+    color: var(--text-muted);
+    text-align: center;
+    line-height: 1.8;
+  }
+
+  /* Print */
+  @media print {
+    body { padding: 20px; font-size: 11px; }
+    .section { page-break-inside: avoid; }
+    .actions, .no-print { display: none; }
+    .phase2 { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- HEADER                                                   -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div class="report-header">
+  <div class="eyebrow">Patent Dossier</div>
+  <h1>Harmonizing composite images using deep learning</h1>
+  <div class="patent-number">US 10,867,416 B2</div>
+
+  <div class="status-row">
+    <span class="status-chip active">● Active — United States</span>
+    <span class="status-chip">Family: 2</span>
+    <span class="status-chip">Claims: 20 <!-- ◇ illustrative count --></span>
+    <span class="status-chip">Cites: 87 ↓ &nbsp; 24 ↑ <!-- ◇ illustrative counts --></span>
+  </div>
+
+  <dl class="report-meta">
+    <dt>Assignee</dt>
+    <dd>Adobe Inc. <span class="badge blue">previously Adobe Systems Incorporated</span></dd>
+    <dt>Inventors</dt>
+    <dd>Xiaohui Shen · Zhe Lin · Yi-Hsuan Tsai · Xin Lu · Kalyan K. Sunkavalli</dd>
+    <dt>Application No.</dt>
+    <dd>US 15/456,367</dd>
+    <dt>Priority Date</dt>
+    <dd>March 10, 2017</dd>
+    <dt>Filing Date</dt>
+    <dd>March 10, 2017</dd>
+    <dt>Publication / Grant</dt>
+    <dd>December 15, 2020</dd>
+    <dt>Anticipated Expiration</dt>
+    <dd>March 10, 2037</dd>
+  </dl>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- 1. ABSTRACT                                              -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div class="section">
+  <h2 class="section-title"><span class="section-number">1</span>Abstract</h2>
+  <div class="section-intro">
+    Verbatim abstract as published, followed by an AI-generated executive
+    overview (see § 8).
+  </div>
+
+  <div class="abstract-box">
+    <div class="label">Verbatim Abstract</div>
+    Methods and systems are provided for generating harmonized images for input composite images.
+    A neural network system can be trained, where the training includes training a neural network
+    that generates harmonized images for input composite images. This training is performed based
+    on a comparison of a training harmonized image and a reference image, where the reference image
+    is modified to generate a training input composite image used to generate the training harmonized
+    image. In addition, a mask of a region can be input to limit the area of the input image that
+    is to be modified. Such a trained neural network system can be used to input a composite image
+    and mask pair for which the trained system will output a harmonized image.
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- 2. LEGAL STATUS                                          -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div class="section">
+  <h2 class="section-title"><span class="section-number">2</span>Legal Status</h2>
+  <div class="section-intro">
+    Live status across all jurisdictions where this invention has been filed.
+    Maintenance fee history and re-exam events arrive in Phase 2 once the
+    USPTO ODP integration lands.
+  </div>
+
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Jurisdiction</th>
+        <th>Status</th>
+        <th>Key Date</th>
+        <th>Next Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>🇺🇸 United States</td>
+        <td><span class="badge green">Active</span></td>
+        <td>Granted 2020-12-15</td>
+        <td>3.5-yr maintenance fee due 2024-06-15 <!-- ◇ illustrative --></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <details class="phase2" style="margin-top: 12px;">
+    <summary>Phase 2 — Annuity / fee history (USPTO ODP)</summary>
+    <p>Will display maintenance fee payment history, surcharge windows, lapsed status reasons.
+    Requires USPTO Open Data Portal integration.</p>
+  </details>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- 3. FAMILY MAP                                            -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div class="section">
+  <h2 class="section-title"><span class="section-number">3</span>Family Map</h2>
+  <div class="section-intro">
+    All worldwide applications that claim priority from the same root filing.
+    This family is US-only (single jurisdiction); larger families will render
+    as a priority-chain tree.
+  </div>
+
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Jurisdiction</th>
+        <th>Publication No.</th>
+        <th>Type</th>
+        <th>Status</th>
+        <th>Date</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="family-row">
+        <td>🇺🇸 US</td>
+        <td>US20180260668A1</td>
+        <td>Application (A1)</td>
+        <td><span class="badge amber">Published</span></td>
+        <td>2018-09-13</td>
+      </tr>
+      <tr class="family-row">
+        <td>🇺🇸 US</td>
+        <td>US10867416B2</td>
+        <td>Grant (B2)</td>
+        <td><span class="badge green">Active</span></td>
+        <td>2020-12-15</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- 4. CLAIM TREE                                            -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div class="section">
+  <h2 class="section-title"><span class="section-number">4</span>Claim Tree</h2>
+  <div class="section-intro">
+    Independent claims (filled chips) define the patent's scope; dependent
+    claims (outlined) add limitations. Click any claim to expand verbatim text.
+  </div>
+
+  <div class="placeholder-banner">
+    ◇ ILLUSTRATIVE — claim text and dependency map below are placeholders.
+    The real claims are scraped from the Google Patents page at runtime.
+  </div>
+
+  <ul class="claim-tree">
+    <li>
+      <span class="claim-id">1</span>
+      <strong>Independent</strong> &mdash; method
+      <details>
+        <summary>Show verbatim text</summary>
+        <div class="claim-text">
+          1. A computer-implemented method for generating a harmonized image, comprising:
+          receiving, by a computing device, an input composite image and a mask identifying
+          a region of the composite image to be modified; providing the input composite image
+          and the mask to a trained neural network system having an encoder-decoder
+          architecture with skip connections; and generating, using the trained neural network
+          system, a harmonized image that maintains coloration and tonal consistency between
+          the masked region and a remainder of the composite image.
+          <em>(placeholder — verbatim text to be sourced from Google Patents)</em>
+        </div>
+      </details>
+      <div class="deps">
+        Dependents:
+        <span class="claim-id dep">2</span>
+        <span class="claim-id dep">3</span>
+        <span class="claim-id dep">4</span>
+        <span class="claim-id dep">5</span>
+        <span class="claim-id dep">6</span>
+        <span class="claim-id dep">7</span>
+        <span class="claim-id dep">8</span>
+      </div>
+    </li>
+    <li>
+      <span class="claim-id">9</span>
+      <strong>Independent</strong> &mdash; system
+      <details>
+        <summary>Show verbatim text</summary>
+        <div class="claim-text">
+          9. A system comprising one or more processors and one or more computer-readable
+          storage media storing instructions which, when executed, cause the system to
+          perform operations comprising the steps recited in claim 1 ...
+          <em>(placeholder)</em>
+        </div>
+      </details>
+      <div class="deps">
+        Dependents:
+        <span class="claim-id dep">10</span>
+        <span class="claim-id dep">11</span>
+        <span class="claim-id dep">12</span>
+        <span class="claim-id dep">13</span>
+        <span class="claim-id dep">14</span>
+      </div>
+    </li>
+    <li>
+      <span class="claim-id">15</span>
+      <strong>Independent</strong> &mdash; non-transitory media
+      <details>
+        <summary>Show verbatim text</summary>
+        <div class="claim-text">
+          15. One or more non-transitory computer-readable storage media storing instructions
+          that, when executed by one or more processors, cause the processors to perform
+          operations comprising ...
+          <em>(placeholder)</em>
+        </div>
+      </details>
+      <div class="deps">
+        Dependents:
+        <span class="claim-id dep">16</span>
+        <span class="claim-id dep">17</span>
+        <span class="claim-id dep">18</span>
+        <span class="claim-id dep">19</span>
+        <span class="claim-id dep">20</span>
+      </div>
+    </li>
+  </ul>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- 5. CITATION NETWORK                                      -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div class="section">
+  <h2 class="section-title"><span class="section-number">5</span>Citation Network</h2>
+  <div class="section-intro">
+    Backward citations describe the prior art this patent built on; forward
+    citations describe inventions that have since built on this one. Forward
+    citations grouped by assignee surface competitor patenting activity.
+  </div>
+
+  <div class="placeholder-banner">
+    ◇ ILLUSTRATIVE — citation counts and patent IDs below are plausible
+    placeholders for layout purposes. Real values come from the Google Patents
+    scrape at runtime.
+  </div>
+
+  <div class="cite-summary">
+    <div class="cite-card">
+      <div class="label">Cited By (forward)</div>
+      <div class="num">87</div>
+      <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+        across 18 assignees — top: Adobe (12), NVIDIA (8), Microsoft (6)
+      </div>
+    </div>
+    <div class="cite-card">
+      <div class="label">Cites (backward)</div>
+      <div class="num">24</div>
+      <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+        18 patent + 6 non-patent references
+      </div>
+    </div>
+  </div>
+
+  <h3 style="font-size:13px; font-weight:600; margin-top:18px; margin-bottom:8px;">Top forward citations</h3>
+  <table class="data-table">
+    <thead>
+      <tr><th>Patent</th><th>Title</th><th>Assignee</th><th>Date</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>US11393078B2</td><td>Image compositing using neural networks</td><td>Adobe Inc.</td><td>2022</td></tr>
+      <tr><td>US11488342B1</td><td>Neural-network-based image inpainting</td><td>NVIDIA Corp.</td><td>2022</td></tr>
+      <tr><td>US11580698B2</td><td>Photorealistic compositing with semantic guidance</td><td>Microsoft Tech.</td><td>2023</td></tr>
+      <tr><td>US11663751B2</td><td>Color harmonization for AR overlays</td><td>Meta Platforms</td><td>2023</td></tr>
+      <tr><td>US11842457B2</td><td>Generative image editing with masks</td><td>Adobe Inc.</td><td>2023</td></tr>
+    </tbody>
+  </table>
+
+  <h3 style="font-size:13px; font-weight:600; margin-top:18px; margin-bottom:8px;">Top backward citations</h3>
+  <table class="data-table">
+    <thead>
+      <tr><th>Patent</th><th>Title</th><th>Assignee</th><th>Date</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>US9344690B2</td><td>Image composition with statistical color matching</td><td>Adobe Systems</td><td>2016</td></tr>
+      <tr><td>US9135732B2</td><td>Object-aware image editing</td><td>Adobe Systems</td><td>2015</td></tr>
+      <tr><td>US8923633B2</td><td>Image segmentation using deep features</td><td>Microsoft Corp.</td><td>2014</td></tr>
+      <tr><td>US9430817B2</td><td>Blind image colorization</td><td>Adobe Systems</td><td>2016</td></tr>
+      <tr><td>US9202144B2</td><td>Region-based image harmonization</td><td>Yahoo Inc.</td><td>2015</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- 6. CLASSIFICATION CONTEXT                                -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div class="section">
+  <h2 class="section-title"><span class="section-number">6</span>Classification Context</h2>
+  <div class="section-intro">
+    Cooperative Patent Classification (CPC) codes assigned by examiners. The
+    primary classification anchors the patent's technical home; sibling
+    classifications describe its surrounding neighborhood.
+  </div>
+
+  <div style="margin-bottom: 14px;">
+    <div style="font-size:11px; color: var(--text-muted); margin-bottom: 6px;">Primary</div>
+    <span class="cpc-chip primary">G06N3/0464</span>
+    <span style="font-size: 12px; color: var(--text); margin-left: 8px;">Convolutional neural networks (CNN)</span>
+  </div>
+
+  <div style="margin-bottom: 14px;">
+    <div style="font-size:11px; color: var(--text-muted); margin-bottom: 6px;">All CPC classifications (19)</div>
+    <table class="data-table">
+      <thead><tr><th>Code</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><span class="cpc-chip">G06N3/0455</span></td><td>Auto-encoder networks / encoder-decoder networks</td></tr>
+        <tr><td><span class="cpc-chip">G06N3/045</span></td><td>Combinations of neural networks</td></tr>
+        <tr><td><span class="cpc-chip">G06N3/084</span></td><td>Backpropagation and gradient descent</td></tr>
+        <tr><td><span class="cpc-chip">G06N3/09</span></td><td>Supervised learning</td></tr>
+        <tr><td><span class="cpc-chip">G06T11/00</span></td><td>2D image generation</td></tr>
+        <tr><td><span class="cpc-chip">G06T2207/20212</span></td><td>Image combination</td></tr>
+        <tr><td><span class="cpc-chip">G06T2207/20221</span></td><td>Image fusion and merging</td></tr>
+        <tr><td><span class="cpc-chip">G06V10/20</span></td><td>Image preprocessing</td></tr>
+        <tr><td><span class="cpc-chip">G06V10/26</span></td><td>Pattern segmentation and clustering</td></tr>
+        <tr><td><span class="cpc-chip">G06V10/44</span></td><td>Local feature extraction analysis</td></tr>
+        <tr><td><span class="cpc-chip">G06V10/449</span></td><td>Biologically inspired filters</td></tr>
+        <tr><td><span class="cpc-chip">G06V10/454</span></td><td>Hierarchical structure in CNN</td></tr>
+        <tr><td><span class="cpc-chip">G06V10/56</span></td><td>Feature extraction relating to colour</td></tr>
+        <tr><td><span class="cpc-chip">G06V10/764</span></td><td>Classification using pattern recognition</td></tr>
+        <tr><td><span class="cpc-chip">G06V10/774</span></td><td>Training pattern generation / bootstrap</td></tr>
+        <tr><td><span class="cpc-chip">G06V10/82</span></td><td>Neural network arrangements</td></tr>
+        <tr><td><span class="cpc-chip">G06F18/2413</span></td><td>Classification using distance-based approaches</td></tr>
+        <tr><td><span class="cpc-chip">H04N1/6066</span></td><td>Reduction of colour to reproducible range, gamut-dependent</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div>
+    <div style="font-size:11px; color: var(--text-muted); margin-bottom: 6px;">Sibling subgroups (one level up)</div>
+    <span class="cpc-chip">G06N3/04x</span>
+    <span class="cpc-chip">G06T2207/20xxx</span>
+    <span class="cpc-chip">G06V10/xx</span>
+    <span style="font-size: 11px; color: var(--text-muted); margin-left: 6px;">
+      ~12,400 US patents in the G06V10 neighborhood <!-- ◇ illustrative count -->
+    </span>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- 7. SIMILAR PATENTS                                       -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div class="section">
+  <h2 class="section-title"><span class="section-number">7</span>Similar Patents</h2>
+  <div class="section-intro">
+    Google's similar-document list, surfaced from the source page. Phase 1.5
+    will add a custom similarity ranker that re-scores by claim-text overlap.
+  </div>
+
+  <div class="placeholder-banner">
+    ◇ ILLUSTRATIVE — similar-patent list to be scraped from the Google Patents
+    "Similar Documents" section.
+  </div>
+
+  <table class="data-table">
+    <thead>
+      <tr><th>Patent</th><th>Title</th><th>Assignee</th><th>Score</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>US10535164B2</td><td>Shadow detection and removal in composite images</td><td>Adobe Inc.</td><td>0.91</td></tr>
+      <tr><td>US10685454B2</td><td>Color transfer for image harmonization</td><td>Adobe Inc.</td><td>0.88</td></tr>
+      <tr><td>US11138775B1</td><td>Deep generative compositing</td><td>NVIDIA Corp.</td><td>0.85</td></tr>
+      <tr><td>US10970856B2</td><td>Foreground/background blending with neural masks</td><td>Microsoft</td><td>0.82</td></tr>
+      <tr><td>US11244505B2</td><td>Semantic-aware image editing</td><td>Adobe Inc.</td><td>0.79</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- 8. AI SUMMARY                                            -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div class="section">
+  <h2 class="section-title"><span class="section-number">8</span>AI Summary</h2>
+  <div class="section-intro">
+    Plain-English executive overview generated from the patent text by Gemini.
+    Regenerate to refresh. Prosecution highlights (rejections argued,
+    amendments made) arrive in Phase 2 with USPTO file-wrapper integration.
+  </div>
+
+  <div class="ai-box">
+    <div class="header">
+      <strong>Executive Overview</strong>
+      <span class="badge">🧠 Generated by Gemini</span>
+    </div>
+    <p>
+      This patent covers a deep-learning approach to <strong>image harmonization</strong> &mdash;
+      the problem of making a pasted-in image element (foreground) look like it belongs in
+      its new scene (background) by matching color, tone, and lighting. The core mechanism is
+      an <strong>encoder-decoder convolutional neural network</strong> trained end-to-end on
+      synthetic composite/reference image pairs, with a user-provided mask isolating which
+      region should be adjusted.
+    </p>
+    <p>
+      Claim scope is <strong>moderate</strong>: the independent claims are framed around the
+      neural-network-based approach to image harmonization with mask input. The specification
+      describes encoder-decoder architectures with skip connections and semantic-segmentation
+      input, which limits the breadth versus a pure "neural composite blending" claim. Practical
+      coverage spans Photoshop-style compositing, AR overlays, and any product that pastes
+      generated foregrounds into real backgrounds.
+    </p>
+    <p style="font-size: 11px; color: var(--text-muted); margin-top: 10px;">
+      ◇ ILLUSTRATIVE — final summary text will be regenerated against the live patent.
+    </p>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- 9. EXPORT / SHARE                                        -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div class="section no-print">
+  <h2 class="section-title"><span class="section-number">9</span>Export &amp; Share</h2>
+  <div class="section-intro">
+    PDF export is included free; persistent shareable URLs and server-side
+    PDF rendering ship with the Pro plan.
+  </div>
+
+  <div class="actions">
+    <button class="btn primary">📋 Copy as memo</button>
+    <button class="btn">🖨️ Print to PDF</button>
+    <button class="btn" disabled>🔗 Get shareable URL <span class="badge primary" style="margin-left:6px;">PRO</span></button>
+    <button class="btn" disabled>📄 Server-side PDF <span class="badge primary" style="margin-left:6px;">PRO</span></button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- PHASE 2 PREVIEW (hidden by default)                      -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div class="section">
+  <h2 class="section-title">Phase 2 sections (preview)</h2>
+  <div class="section-intro">
+    These sections require USPTO Open Data Portal integration. They ship empty
+    in v1 and populate once the ODP pipeline lands.
+  </div>
+
+  <details class="phase2">
+    <summary>File wrapper viewer</summary>
+    <p>Full prosecution history: filing receipt, office actions, responses,
+    IDS submissions, examiner interviews, allowance, amendments.</p>
+  </details>
+  <details class="phase2" style="margin-top: 8px;">
+    <summary>Office Action analyzer</summary>
+    <p>Gemini-powered summary of every rejection (§102, §103, §112), the
+    cited art, and suggested response arguments.</p>
+  </details>
+  <details class="phase2" style="margin-top: 8px;">
+    <summary>Examiner statistics</summary>
+    <p>Allowance rate, average pendency, RCE rate, interview success rate
+    for the examiner who issued this patent. Sourced from USPTO PatentsView.</p>
+  </details>
+  <details class="phase2" style="margin-top: 8px;">
+    <summary>IDS draft generator</summary>
+    <p>Auto-formatted IDS forms (SB/08, SB/08a) from the citation network of
+    this patent's family.</p>
+  </details>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- FOOTER                                                   -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div class="report-footer">
+  Generated by AI Patent Search Generator &mdash; Patent Dossier mockup<br>
+  Data sources: Google Patents (worldwide), Gemini (AI summary)<br>
+  This dossier is generated for research purposes and does not constitute legal advice.
+</div>
+
+</body>
+</html>
