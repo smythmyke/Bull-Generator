@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   fetchPatentDossier,
   fetchDossierSummary,
@@ -49,14 +49,15 @@ function gpUrl(patentNumber: string): string {
 }
 
 interface SectionProps {
+  id: string;
   num: number;
   title: string;
   intro: string;
   children: React.ReactNode;
 }
 
-const Section: React.FC<SectionProps> = ({ num, title, intro, children }) => (
-  <section className="mb-8 break-inside-avoid">
+const Section: React.FC<SectionProps> = ({ id, num, title, intro, children }) => (
+  <section id={id} className="mb-8 break-inside-avoid scroll-mt-20">
     <h2 className="text-base font-bold text-slate-800 border-b-2 border-slate-800 pb-1.5 mb-2.5 flex items-center gap-2">
       <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-800 text-white text-[10px]">
         {num}
@@ -68,6 +69,68 @@ const Section: React.FC<SectionProps> = ({ num, title, intro, children }) => (
     </p>
     {children}
   </section>
+);
+
+const NAV_SECTIONS = [
+  { id: 'summary', label: 'Summary' },
+  { id: 'abstract', label: 'Abstract' },
+  { id: 'legal-status', label: 'Status' },
+  { id: 'family', label: 'Family' },
+  { id: 'claims', label: 'Claims' },
+  { id: 'citations', label: 'Citations' },
+  { id: 'classification', label: 'Classification' },
+  { id: 'similar', label: 'Similar' },
+  { id: 'export', label: 'Export' },
+];
+
+const CHROME_STORE_URL =
+  'https://chromewebstore.google.com/detail/lailglkmjkboieogmakjkcbihbldigno';
+
+interface BrandHeaderProps {
+  activeId: string;
+  onNavClick: (id: string) => void;
+}
+
+const BrandHeader: React.FC<BrandHeaderProps> = ({ activeId, onNavClick }) => (
+  <header className="sticky top-0 z-20 bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm print:static print:bg-white print:shadow-none print:border-b-2 print:border-slate-800">
+    <div className="max-w-5xl mx-auto px-8 py-3 flex items-center gap-4">
+      <div className="flex items-center gap-2 shrink-0">
+        <img src="icons/icon128.png" alt="" className="h-7 w-7" />
+        <span className="font-semibold text-slate-800 text-sm leading-none">
+          AI Patent Search Generator
+        </span>
+        <a
+          href={`${CHROME_STORE_URL}?utm_source=patent_dossier_header`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="hidden md:inline-flex text-[9px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 print:bg-white print:border-slate-300 print:text-slate-700"
+          title="Get it on the Chrome Web Store"
+        >
+          Chrome Extension
+        </a>
+      </div>
+      <nav className="ml-auto flex flex-wrap gap-0.5 print:hidden">
+        {NAV_SECTIONS.map((s) => {
+          const isActive = activeId === s.id;
+          return (
+            <a
+              key={s.id}
+              href={`#${s.id}`}
+              onClick={() => onNavClick(s.id)}
+              aria-current={isActive ? 'true' : undefined}
+              className={`text-[11px] font-medium px-2 py-1 rounded transition-colors ${
+                isActive
+                  ? 'bg-blue-100 text-blue-700'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+              }`}
+            >
+              {s.label}
+            </a>
+          );
+        })}
+      </nav>
+    </div>
+  </header>
 );
 
 // ── Section bodies ─────────────────────────────────────────────────────
@@ -131,6 +194,7 @@ const HeaderBlock: React.FC<{ dossier: PatentDossier }> = ({ dossier }) => {
 
 const AbstractSection: React.FC<{ dossier: PatentDossier }> = ({ dossier }) => (
   <Section
+    id="abstract"
     num={2}
     title="Abstract"
     intro="Verbatim abstract as published. The AI summary in § 1 distills this into plain English."
@@ -148,6 +212,7 @@ const AbstractSection: React.FC<{ dossier: PatentDossier }> = ({ dossier }) => (
 
 const LegalStatusSection: React.FC<{ dossier: PatentDossier }> = ({ dossier }) => (
   <Section
+    id="legal-status"
     num={3}
     title="Legal Status"
     intro="Live status across all jurisdictions where this invention has been filed. Annuity history and re-exam events ship in Phase 2 with USPTO ODP."
@@ -183,6 +248,7 @@ const FamilySection: React.FC<{ dossier: PatentDossier }> = ({ dossier }) => {
   const members: DossierFamilyMember[] = dossier.family.members;
   return (
     <Section
+      id="family"
       num={4}
       title="Family Map"
       intro="All worldwide applications claiming priority from the same root filing. Larger families render as a priority-chain tree (future enhancement)."
@@ -240,6 +306,7 @@ const ClaimsSection: React.FC<{ dossier: PatentDossier }> = ({ dossier }) => {
 
   return (
     <Section
+      id="claims"
       num={5}
       title="Claim Tree"
       intro={`${dossier.claims.totalCount} total claims · ${dossier.claims.independentNumbers.length} independent. Click any claim to expand the verbatim text.`}
@@ -297,6 +364,7 @@ const CitationRow: React.FC<{ c: DossierCitation }> = ({ c }) => (
 
 const CitationsSection: React.FC<{ dossier: PatentDossier }> = ({ dossier }) => (
   <Section
+    id="citations"
     num={6}
     title="Citation Network"
     intro="Backward citations describe prior art this patent built on. Forward citations describe inventions that have since built on this one."
@@ -365,6 +433,7 @@ const ClassificationSection: React.FC<{ dossier: PatentDossier }> = ({ dossier }
   const primary = codes.find((c) => c.primary);
   return (
     <Section
+      id="classification"
       num={7}
       title="Classification Context"
       intro="Cooperative Patent Classification (CPC) codes assigned by examiners. The primary anchor classification appears in blue."
@@ -404,6 +473,7 @@ const ClassificationSection: React.FC<{ dossier: PatentDossier }> = ({ dossier }
 
 const SimilarSection: React.FC<{ dossier: PatentDossier }> = ({ dossier }) => (
   <Section
+    id="similar"
     num={8}
     title="Similar Patents"
     intro="Google's similar-document list, surfaced from the source page."
@@ -455,6 +525,7 @@ interface AiSummarySectionProps {
 
 const AiSummarySection: React.FC<AiSummarySectionProps> = ({ summary, loading, error, onGenerate }) => (
   <Section
+    id="summary"
     num={1}
     title="AI Summary"
     intro="Plain-English executive overview and claim-scope characterization, generated automatically when the dossier opens. Cached for 30 days; regenerate to refresh."
@@ -524,7 +595,7 @@ const AiSummarySection: React.FC<AiSummarySectionProps> = ({ summary, loading, e
 );
 
 const ExportSection: React.FC<{ dossier: PatentDossier }> = ({ dossier }) => (
-  <section className="mb-8 break-inside-avoid no-print">
+  <section id="export" className="mb-8 break-inside-avoid scroll-mt-20 print:hidden">
     <h2 className="text-base font-bold text-slate-800 border-b-2 border-slate-800 pb-1.5 mb-2.5 flex items-center gap-2">
       <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-800 text-white text-[10px]">9</span>
       Export &amp; Share
@@ -572,6 +643,16 @@ const PatentDossierPage: React.FC = () => {
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
 
+  const [activeId, setActiveId] = useState<string>(NAV_SECTIONS[0].id);
+  // Click-driven nav temporarily wins over scroll observer to avoid flicker
+  // while smooth-scrolling settles on the target.
+  const clickLockUntilRef = useRef<number>(0);
+
+  const handleNavClick = useCallback((id: string) => {
+    setActiveId(id);
+    clickLockUntilRef.current = Date.now() + 900;
+  }, []);
+
   const patentNumber = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
     return params.get('number')?.trim() || '';
@@ -594,6 +675,41 @@ const PatentDossierPage: React.FC = () => {
   useEffect(() => {
     document.title = patentNumber ? `${patentNumber} — Patent Dossier` : 'Patent Dossier';
   }, [patentNumber]);
+
+  // Scroll-spy: highlight the nav button for whichever section is currently
+  // in the trigger band just under the sticky header.
+  useEffect(() => {
+    if (!dossier) return;
+
+    const visibleIds = new Set<string>();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting) visibleIds.add(e.target.id);
+          else visibleIds.delete(e.target.id);
+        }
+        if (Date.now() < clickLockUntilRef.current) return;
+        if (visibleIds.size === 0) return;
+        // Pick topmost visible section by current DOM position
+        const sorted = [...visibleIds]
+          .map((id) => ({
+            id,
+            top: document.getElementById(id)?.getBoundingClientRect().top ?? Infinity,
+          }))
+          .sort((a, b) => a.top - b.top);
+        setActiveId(sorted[0].id);
+      },
+      // Trigger band: from just under the sticky header down to ~25% of viewport
+      { rootMargin: '-72px 0px -75% 0px', threshold: 0 }
+    );
+
+    NAV_SECTIONS.forEach((s) => {
+      const el = document.getElementById(s.id);
+      if (el) observer.observe(el);
+    });
+
+    return () => observer.disconnect();
+  }, [dossier]);
 
   useEffect(() => {
     if (authLoading || !user || !patentNumber) return;
@@ -689,30 +805,47 @@ const PatentDossierPage: React.FC = () => {
   }
 
   return (
-    <div className="max-w-5xl mx-auto px-8 py-10 bg-white text-slate-900">
-      <HeaderBlock dossier={dossier} />
-      <AiSummarySection
-        summary={summary}
-        loading={summaryLoading}
-        error={summaryError}
-        onGenerate={handleGenerateSummary}
-      />
-      <AbstractSection dossier={dossier} />
-      <LegalStatusSection dossier={dossier} />
-      <FamilySection dossier={dossier} />
-      <ClaimsSection dossier={dossier} />
-      <CitationsSection dossier={dossier} />
-      <ClassificationSection dossier={dossier} />
-      <SimilarSection dossier={dossier} />
-      <ExportSection dossier={dossier} />
+    <div className="bg-white text-slate-900 min-h-screen">
+      <BrandHeader activeId={activeId} onNavClick={handleNavClick} />
+      <main className="max-w-5xl mx-auto px-8 py-10">
+        <HeaderBlock dossier={dossier} />
+        <AiSummarySection
+          summary={summary}
+          loading={summaryLoading}
+          error={summaryError}
+          onGenerate={handleGenerateSummary}
+        />
+        <AbstractSection dossier={dossier} />
+        <LegalStatusSection dossier={dossier} />
+        <FamilySection dossier={dossier} />
+        <ClaimsSection dossier={dossier} />
+        <CitationsSection dossier={dossier} />
+        <ClassificationSection dossier={dossier} />
+        <SimilarSection dossier={dossier} />
+        <ExportSection dossier={dossier} />
 
-      <footer className="mt-10 pt-4 border-t-2 border-slate-800 text-center text-[10px] text-slate-500 leading-relaxed">
-        Generated by AI Patent Search Generator — Patent Dossier
-        <br />
-        Data: Google Patents (worldwide) · Fetched {new Date(dossier.fetchedAt).toLocaleString()}
-        <br />
-        This dossier is generated for research purposes and does not constitute legal advice.
-      </footer>
+        <footer className="mt-10 pt-4 border-t-2 border-slate-800 text-center text-[10px] text-slate-500 leading-relaxed">
+          <div className="flex items-center justify-center gap-1.5 mb-1">
+            <img src="icons/icon128.png" alt="" className="h-4 w-4" />
+            <span className="font-semibold text-slate-700">AI Patent Search Generator</span>
+            <span>— Patent Dossier</span>
+          </div>
+          <div className="mb-1.5">
+            Free Chrome extension ·{' '}
+            <a
+              href={`${CHROME_STORE_URL}?utm_source=patent_dossier_footer`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 hover:underline font-medium"
+            >
+              chromewebstore.google.com/detail/lailglkmjkboieogmakjkcbihbldigno
+            </a>
+          </div>
+          Data: Google Patents (worldwide) · Fetched {new Date(dossier.fetchedAt).toLocaleString()}
+          <br />
+          This dossier is generated for research purposes and does not constitute legal advice.
+        </footer>
+      </main>
     </div>
   );
 };

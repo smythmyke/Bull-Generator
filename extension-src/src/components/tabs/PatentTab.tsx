@@ -216,9 +216,11 @@ const PatentTab: React.FC = () => {
               );
               chrome.tabs.create({ url });
             }}
+            title="Opens the full dossier in a new tab. Reuses the cached fetch (~3 credits if cache expired)."
           >
             <ExternalLink className="mr-1.5 h-3 w-3" />
             Open full dossier
+            <span className="ml-2 text-[9px] uppercase tracking-wide opacity-70">~3 credits</span>
           </Button>
         </div>
       )}
