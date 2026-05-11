@@ -108,17 +108,11 @@ const ConceptMapperTab: React.FC = () => {
   const [selectedCPCCodes, setSelectedCPCCodes] = useState<Set<string>>(new Set());
   const [acceptedSwapIndices, setAcceptedSwapIndices] = useState<Set<number>>(new Set());
 
-  // Auto-update strategy when depth changes (unless user overrode)
+  // Always use telescoping strategy (onion-ring/faceted hidden for now)
   const handleDepthChange = useCallback((depth: SearchDepth) => {
     setSearchDepth(depth);
-    if (!strategyOverridden) {
-      setSearchStrategy(STRATEGY_DEPTH_DEFAULTS[depth]);
-    } else if (depth === 'quick' && searchStrategy === 'faceted') {
-      // Faceted not available at quick depth — reset to default
-      setSearchStrategy(STRATEGY_DEPTH_DEFAULTS[depth]);
-      setStrategyOverridden(false);
-    }
-  }, [strategyOverridden, searchStrategy]);
+    setSearchStrategy('telescoping');
+  }, []);
 
   const handleStrategyChange = useCallback((strategy: SearchStrategy) => {
     setSearchStrategy(strategy);
@@ -348,8 +342,7 @@ const ConceptMapperTab: React.FC = () => {
     const hasAnyEnabled = Object.values(enabledQueries).some(Boolean);
     if (!hasAnyEnabled) return;
 
-    const creditCost = hasSearched ? 0 : 1;
-    await withCreditCheck('unified-telescoping', creditCost, async () => {
+    await withCreditCheck('unified-telescoping', 1, async () => {
       setSearchingField('unified-telescoping');
       setError('');
       setProSearchPhase('');
@@ -393,15 +386,12 @@ const ConceptMapperTab: React.FC = () => {
     });
   };
 
-  // Strategy-based search handler (for non-telescoping strategies)
+  // Strategy-based search handler (Pro Auto + Telescoping)
   const handleStrategySearch = async () => {
     if (!hasEnabledConcepts) return;
 
-    const creditCost = getStrategyCreditCost(searchDepth, searchStrategy);
-    const actionKey = `strategy-${searchDepth}-${searchStrategy}`;
-
-    await withCreditCheck(actionKey, creditCost, async () => {
-      setSearchingField(actionKey);
+    await withCreditCheck('strategy-pro-auto-telescoping', 1, async () => {
+      setSearchingField('strategy-pro-auto-telescoping');
       setError('');
       setGoogleError(null);
 
@@ -409,8 +399,8 @@ const ConceptMapperTab: React.FC = () => {
         await runStrategyWithDepth({
           originalParagraph: inputText.trim(),
           concepts: conceptsForSearch,
-          strategy: searchStrategy,
-          depth: searchDepth,
+          strategy: 'telescoping',
+          depth: 'pro-auto',
           onProgress: (progress: ProSearchProgress) => {
             if (isMounted.current) {
               setProSearchPhase(progress.phase);
@@ -418,20 +408,6 @@ const ConceptMapperTab: React.FC = () => {
               setProSearchMessage(progress.message);
             }
           },
-          onPause: searchDepth === 'pro-interactive' ? (data: RefinementDashboardData) => {
-            return new Promise<UserRefinementSelections>((resolve) => {
-              if (isMounted.current) {
-                const preselectedPatents = new Set(data.patents.slice(0, 3).map((p: any) => p.patentId));
-                const preselectedCPCs = new Set(data.cpcSuggestions.slice(0, 3).map((c) => c.code));
-                setRefinementData(data);
-                setSelectedPatentIds(preselectedPatents);
-                setSelectedCPCCodes(preselectedCPCs);
-                setAcceptedSwapIndices(new Set());
-                setShowRefinementDashboard(true);
-                refinementResolveRef.current = resolve;
-              }
-            });
-          } : undefined,
         });
       } catch (err) {
         if (isMounted.current) {
@@ -820,11 +796,10 @@ const ConceptMapperTab: React.FC = () => {
             <Label className="text-xs font-semibold">Search Depth</Label>
             <AnimatedCreditPill />
           </div>
-          <div className="grid grid-cols-3 gap-1 p-1 bg-secondary/30 rounded-lg">
+          <div className="grid grid-cols-2 gap-1 p-1 bg-secondary/30 rounded-lg">
             {([
               { depth: 'quick' as SearchDepth, label: 'Quick', desc: '1 credit' },
               { depth: 'pro-auto' as SearchDepth, label: 'Pro Auto', desc: '1 credit' },
-              { depth: 'pro-interactive' as SearchDepth, label: 'Pro Interactive', desc: '2 credits' },
             ]).map(({ depth, label, desc }) => (
               <button
                 key={depth}
@@ -840,51 +815,6 @@ const ConceptMapperTab: React.FC = () => {
                 <div className="text-[9px] opacity-80">{desc}</div>
               </button>
             ))}
-          </div>
-
-          {/* Strategy selector */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5">
-              <Label className="text-xs font-semibold">Strategy</Label>
-              {!strategyOverridden && (
-                <span className="text-[9px] px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-medium">auto</span>
-              )}
-            </div>
-            {strategyOverridden && (
-              <button
-                onClick={resetStrategyToAuto}
-                className="text-[10px] text-primary hover:underline"
-              >
-                reset to auto
-              </button>
-            )}
-          </div>
-          <div className="grid grid-cols-3 gap-1 p-1 bg-secondary/30 rounded-lg">
-            {([
-              { strategy: 'telescoping' as SearchStrategy, label: 'Telescoping', desc: 'B/M/N tiers' },
-              { strategy: 'onion-ring' as SearchStrategy, label: 'Onion Ring', desc: 'Adaptive' },
-              { strategy: 'faceted' as SearchStrategy, label: 'Faceted', desc: 'Explore edges +1cr' },
-            ]).map(({ strategy, label, desc }) => {
-              const isFacetedQuick = strategy === 'faceted' && searchDepth === 'quick';
-              return (
-              <button
-                key={strategy}
-                onClick={() => handleStrategyChange(strategy)}
-                disabled={!!searchingField || isFacetedQuick}
-                title={isFacetedQuick ? 'Faceted requires Pro Auto or Pro Interactive depth' : undefined}
-                className={`px-2 py-1.5 rounded text-center transition-colors ${
-                  searchStrategy === strategy
-                    ? 'bg-primary text-primary-foreground shadow-sm'
-                    : isFacetedQuick
-                    ? 'opacity-40 cursor-not-allowed text-muted-foreground'
-                    : 'hover:bg-secondary/50 text-muted-foreground'
-                }`}
-              >
-                <div className="text-[11px] font-semibold">{label}</div>
-                <div className="text-[9px] opacity-80">{desc}</div>
-              </button>
-              );
-            })}
           </div>
 
           {/* Merge info badge */}
@@ -933,7 +863,7 @@ const ConceptMapperTab: React.FC = () => {
       {hasEnabledConcepts && !showRefinementDashboard && (
         <div className="space-y-2">
           {/* Quick + Telescoping: unified 5-query cards */}
-          {searchDepth === 'quick' && searchStrategy === 'telescoping' ? (
+          {searchDepth === 'quick' ? (
             <>
               <Label className="text-xs font-semibold">Search Queries</Label>
 
@@ -999,7 +929,7 @@ const ConceptMapperTab: React.FC = () => {
                     size="sm"
                   >
                     <Search className="h-4 w-4" />
-                    {isSearching ? 'Searching...' : hasSearched ? 'Re-run (free)' : 'Search (1 credit)'}
+                    {isSearching ? 'Searching...' : 'Search (1 credit)'}
                   </Button>
                 );
               })()}
@@ -1016,41 +946,22 @@ const ConceptMapperTab: React.FC = () => {
             </>
           ) : (
             <>
-              {/* All other strategy+depth combos: single strategy-aware button */}
+              {/* Pro Auto search button */}
               {(() => {
-                const creditCost = getStrategyCreditCost(searchDepth, searchStrategy);
-                const actionKey = `strategy-${searchDepth}-${searchStrategy}`;
+                const actionKey = 'strategy-pro-auto-telescoping';
                 const isSearching = searchingField === actionKey || searchingField?.startsWith('strategy-');
-
-                // Button style based on depth
-                const gradientClass = searchDepth === 'quick'
-                  ? 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700'
-                  : searchDepth === 'pro-auto'
-                    ? 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700'
-                    : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700';
-
-                // Strategy-specific label
-                const strategyLabel = searchStrategy === 'onion-ring' ? 'Adaptive'
-                  : searchStrategy === 'faceted' ? 'Faceted'
-                  : 'Telescoping';
-
-                const depthLabel = searchDepth === 'quick' ? 'Quick'
-                  : searchDepth === 'pro-auto' ? 'Pro Auto'
-                  : 'Pro Interactive';
 
                 return (
                   <Button
                     onClick={handleStrategySearch}
                     disabled={!!searchingField || !canSearch || checkingAction !== null}
-                    className={`w-full h-11 text-sm font-bold gap-2 ${gradientClass}`}
+                    className="w-full h-11 text-sm font-bold gap-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
                     size="sm"
                   >
                     <Search className="h-4 w-4" />
-                    {checkingAction === actionKey
-                      ? 'Checking credits...'
-                      : isSearching
-                        ? `Running ${strategyLabel}...`
-                        : `Run ${depthLabel} ${strategyLabel} Search (${creditCost} credit${creditCost > 1 ? 's' : ''})`}
+                    {isSearching
+                      ? 'Running Pro Auto...'
+                      : 'Run Pro Auto Search (1 credit)'}
                   </Button>
                 );
               })()}

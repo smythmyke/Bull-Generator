@@ -1898,6 +1898,8 @@ export async function runStrategyWithDepth(params: StrategySearchParams): Promis
     name: c.name,
     category: (c as any).category || 'device',
     synonyms: c.synonyms,
+    modifiers: c.modifiers,
+    nouns: c.nouns,
     importance: (c.importance || 'medium') as 'high' | 'medium' | 'low',
     enabled: c.enabled,
   }));
@@ -1907,6 +1909,8 @@ export async function runStrategyWithDepth(params: StrategySearchParams): Promis
   const mergedConcepts: ConceptForSearch[] = mergeResult.concepts.map(mc => ({
     name: mc.name,
     synonyms: mc.synonyms,
+    modifiers: mc.modifiers,
+    nouns: mc.nouns,
     enabled: mc.enabled,
     importance: mc.importance,
   }));

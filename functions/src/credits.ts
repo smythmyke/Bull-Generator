@@ -31,7 +31,7 @@ export function getStripePriceId(planId: string): string {
 const STARTER_CREDITS = 5;
 
 // Endpoints that are free (no credit cost)
-export const FREE_ENDPOINTS = new Set(["/synonyms", "/definitions", "/enrich-npl", "/extract-concepts"]);
+export const FREE_ENDPOINTS = new Set(["/synonyms", "/definitions", "/enrich-npl", "/extract-concepts", "/generate-from-concepts", "/rank", "/analyze-round", "/optimize-query"]);
 
 export interface SubscriptionData {
   planId: string;

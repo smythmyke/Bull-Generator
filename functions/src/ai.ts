@@ -884,18 +884,14 @@ const ANALYZE_ROUND_PROMPT = `You are a patent search expert analyzing results f
 Given the original search concepts, the original paragraph, and the patents found in this round (with their titles, abstracts, and CPC codes), analyze the results and provide:
 
 1. **CPC Suggestions**: The most frequent/relevant CPC codes from the results, with labels and frequency counts
-2. **Terminology Swaps**: Terms the user used vs what patents actually use (e.g., user said "battery" but patents say "electrochemical cell")
-3. **Concept Health**: How well each original concept matched — strong (5+ hits), weak (1-4 hits), or missing (0 hits)
-4. **Refined Concepts**: Pre-built improved concepts with updated synonyms and relevant CPC codes for the next search round
-5. **Top Patent IDs**: The 3 most relevant patent IDs for similarity searching
+2. **Concept Health**: How well each original concept matched — strong (5+ hits), weak (1-4 hits), or missing (0 hits)
+3. **Refined Concepts**: Pre-built improved concepts with updated synonyms (including any patent-specific terminology discovered) and relevant CPC codes for the next search round
+4. **Top Patent IDs**: The 5 most relevant patent IDs for similarity searching
 
 Return JSON matching this schema exactly:
 {
   "cpcSuggestions": [
     { "code": "H02J50", "label": "Wireless power supply", "frequency": 12 }
-  ],
-  "terminologySwaps": [
-    { "userTerm": "battery", "patentTerms": ["electrochemical cell", "energy storage device"], "frequency": 8 }
   ],
   "conceptHealth": [
     { "conceptName": "wireless power", "matchCount": 12, "status": "strong" }
@@ -907,11 +903,10 @@ Return JSON matching this schema exactly:
 }
 
 Rules:
-- CPC suggestions: List up to 10 most frequent CPC codes, sorted by frequency descending
-- Terminology swaps: Identify 3-8 terms where patent language differs from user language
+- CPC suggestions: List up to 8 most frequent CPC codes, sorted by frequency descending
 - Concept health: Report on ALL original concepts
-- Refined concepts: Improve each original concept with better synonyms learned from the results
-- Top patent IDs: Pick the 3 most relevant patents for similarity expansion (prefer broad, foundational patents)
+- Refined concepts: Improve each original concept with better synonyms learned from the results. Include any patent-specific vocabulary that differs from the user's terms.
+- Top patent IDs: Pick the 5 most relevant patents for similarity expansion (prefer broad, foundational patents)
 - Return ONLY valid JSON, no markdown.`;
 
 interface RoundResult {
@@ -949,7 +944,7 @@ async function analyzeRound(body: AnalyzeRoundBody): Promise<object> {
   const resultsSummary = roundResults.slice(0, 30).map((r, i) => {
     const parts = [`[${i + 1}] ID: ${r.patentId}`, `Title: ${r.title}`];
     const abs = r.fullAbstract || r.abstract || "";
-    if (abs) parts.push(`Abstract: ${abs.substring(0, 300)}`);
+    if (abs) parts.push(`Abstract: ${abs.substring(0, 800)}`);
     if (r.cpcCodes && r.cpcCodes.length > 0) {
       parts.push(`CPC: ${r.cpcCodes.join(", ")}`);
     }
@@ -975,7 +970,7 @@ ${resultsSummary}`,
     }],
     generationConfig: {
       temperature: 0.2,
-      maxOutputTokens: 4000,
+      maxOutputTokens: 8192,
       responseMimeType: "application/json",
     },
   });

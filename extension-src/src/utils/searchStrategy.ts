@@ -221,10 +221,12 @@ export function buildTelescopingQueries(
 
 /**
  * Build N layered queries, each adding one more concept group.
- * Layer 0: top 2 concepts (broadest)
+ * Layer 0: top 2 concepts (broadest — fewest AND constraints)
  * Layer 1: top 3 concepts
- * Layer N: all concepts up to max 5 (narrowest)
- * Sweet spot is found at runtime by tracking result counts.
+ * Layer N: all concepts (narrowest — most AND constraints)
+ *
+ * Uses modern helpers: stemming, hyphen splitting, dedup, NEAR/15 proximity.
+ * Each concept group uses buildConceptGroup for consistency with telescoping.
  */
 export function buildOnionRingQueries(concepts: ConceptForSearch[]): StrategyQuery[] {
   const enabled = concepts.filter(c => c.enabled);
@@ -233,18 +235,17 @@ export function buildOnionRingQueries(concepts: ConceptForSearch[]): StrategyQue
   const sorted = sortByImportance(enabled);
   const queries: StrategyQuery[] = [];
 
-  // All layers use ALL concepts — layers differ by synonym breadth
-  // Broad: 6 mods / 4 nouns, Moderate: 4/3, Narrow: 2/1
-  const layers: { label: string; maxMods: number; maxNouns: number }[] = [
-    { label: 'Layer 0 (broad)', maxMods: 6, maxNouns: 4 },
-    { label: 'Layer 1 (moderate)', maxMods: 4, maxNouns: 3 },
-    { label: 'Layer 2 (narrow)', maxMods: 2, maxNouns: 1 },
-  ];
+  // Start with top 2 concepts, add one at a time up to all
+  const minGroups = Math.min(2, sorted.length);
 
-  for (const layer of layers) {
-    const groups = sorted.map(c => buildConceptGroup(c, layer.maxMods, layer.maxNouns));
+  for (let count = minGroups; count <= sorted.length; count++) {
+    const subset = sorted.slice(0, count);
+    const groups = subset.map(c => buildConceptGroup(c, 5, 4));
     const query = groups.join(" AND ");
-    queries.push({ label: layer.label, query });
+    queries.push({
+      label: `Layer ${count - minGroups} (${count} concepts)`,
+      query,
+    });
   }
 
   return queries;
@@ -336,7 +337,7 @@ export function buildFacetedQueries(concepts: ConceptForSearch[]): StrategyQuery
 
 export function getStrategyCreditCost(depth: SearchDepth, _strategy?: SearchStrategy): number {
   const baseCost: Record<SearchDepth, number> = {
-    quick: 0,
+    quick: 1,
     'pro-auto': 1,
     'pro-interactive': 2,
   };

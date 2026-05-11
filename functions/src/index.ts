@@ -56,7 +56,7 @@ async function verifyAuth(
 }
 
 // AI proxy endpoints
-export const ai = functions.https.onRequest((req, res) => {
+export const ai = functions.runWith({ timeoutSeconds: 300, memory: "512MB" }).https.onRequest((req, res) => {
   corsHandler(req, res, async () => {
     if (req.method === "OPTIONS") {
       res.status(204).send("");
