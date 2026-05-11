@@ -400,3 +400,86 @@ export async function generateReportSections(
 }
 
 // BigQuery enrichment removed — disabled due to cost
+
+// ── Patent Dossier ───────────────────────────────────────────────────────
+
+export type PatentStatus = 'active' | 'lapsed' | 'expired' | 'pending' | 'unknown';
+
+export interface DossierHeader {
+  title: string;
+  abstract: string;
+  inventors: string[];
+  originalAssignee: string;
+  currentAssignee: string;
+  applicationNumber: string;
+  priorityDate: string;
+  filingDate: string;
+  publicationDate: string;
+  grantDate: string;
+  anticipatedExpiration: string;
+  status: PatentStatus;
+  statusLabel: string;
+}
+
+export interface DossierLegalStatusRow {
+  jurisdiction: string;
+  status: string;
+  keyDate: string;
+}
+
+export interface DossierFamilyMember {
+  jurisdiction: string;
+  publicationNumber: string;
+  type: string;
+  status: string;
+  date: string;
+}
+
+export interface DossierClaim {
+  number: number;
+  text: string;
+  isIndependent: boolean;
+  dependsOn?: number;
+}
+
+export interface DossierCitation {
+  patentNumber: string;
+  title?: string;
+  assignee?: string;
+  date?: string;
+  examinerCited?: boolean;
+}
+
+export interface DossierCpc {
+  code: string;
+  label: string;
+  primary: boolean;
+}
+
+export interface DossierSimilar {
+  patentNumber: string;
+  title?: string;
+  assignee?: string;
+}
+
+export interface PatentDossier {
+  patentNumber: string;
+  fetchedAt: string;
+  cached: boolean;
+  header: DossierHeader;
+  legalStatus: DossierLegalStatusRow[];
+  family: { familyId: string; members: DossierFamilyMember[] };
+  claims: { totalCount: number; independentNumbers: number[]; items: DossierClaim[] };
+  citations: {
+    forwardCount: number;
+    backwardCount: number;
+    forward: DossierCitation[];
+    backward: DossierCitation[];
+  };
+  classification: { cpcCodes: DossierCpc[] };
+  similar: DossierSimilar[];
+}
+
+export async function fetchPatentDossier(patentNumber: string): Promise<PatentDossier> {
+  return callAI<PatentDossier>('/patent-dossier', { patentNumber });
+}
