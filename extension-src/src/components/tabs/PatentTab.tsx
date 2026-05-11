@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   XCircle,
   Clock,
+  Target,
 } from 'lucide-react';
 import { fetchPatentDossier, PatentDossier, PatentStatus } from '../../services/apiService';
 import { useCreditGate } from '../../hooks/useCreditGate';
@@ -18,6 +19,18 @@ import InsufficientCreditsModal from '../InsufficientCreditsModal';
 
 const DOSSIER_CREDIT_COST = 3;
 const RECENT_LIMIT = 5;
+
+/** Pulls a patent number out of a Google Patents URL, if present. */
+async function detectPatentFromActiveTab(): Promise<string | null> {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.url) return null;
+    const match = tab.url.match(/patents\.google\.com\/patent\/([A-Z]{2}\d+[A-Z0-9]*)/i);
+    return match ? match[1].toUpperCase() : null;
+  } catch {
+    return null;
+  }
+}
 
 interface RecentEntry {
   patentNumber: string;
@@ -59,8 +72,31 @@ const PatentTab: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [recents, setRecents] = useState<RecentEntry[]>([]);
+  const [autoFilled, setAutoFilled] = useState(false);
   const { showPurchasePrompt, withCreditCheck, dismissPurchasePrompt, creditError } =
     useCreditGate();
+
+  // On first render, try to auto-fill from the active Google Patents tab.
+  useEffect(() => {
+    let cancelled = false;
+    detectPatentFromActiveTab().then((detected) => {
+      if (!cancelled && detected) {
+        setInput((prev) => (prev.trim() ? prev : detected));
+        setAutoFilled(true);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleDetect = useCallback(async () => {
+    const detected = await detectPatentFromActiveTab();
+    if (detected) {
+      setInput(detected);
+      setAutoFilled(true);
+    }
+  }, []);
 
   const handleFetch = useCallback(
     async (numberToFetch?: string) => {
@@ -120,14 +156,28 @@ const PatentTab: React.FC = () => {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-1.5">
-        <Label htmlFor="patent-number" className="text-xs">
-          Patent number
-        </Label>
+        <div className="flex items-center justify-between">
+          <Label htmlFor="patent-number" className="text-xs">
+            Patent number
+          </Label>
+          <button
+            type="button"
+            onClick={handleDetect}
+            className="text-[10px] text-blue-600 hover:underline flex items-center gap-0.5"
+            title="Use the patent from the active Google Patents tab"
+          >
+            <Target className="h-2.5 w-2.5" />
+            from active tab
+          </button>
+        </div>
         <div className="flex gap-1.5">
           <Input
             id="patent-number"
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              setInput(e.target.value);
+              setAutoFilled(false);
+            }}
             placeholder="e.g. US10867416B2 or EP3500001"
             className="h-8 text-xs"
             disabled={loading}
@@ -142,6 +192,11 @@ const PatentTab: React.FC = () => {
             {loading ? '...' : 'Fetch'}
           </Button>
         </div>
+        {autoFilled && input.trim() && !dossier && (
+          <div className="text-[10px] text-muted-foreground italic">
+            Auto-filled from the active Google Patents tab.
+          </div>
+        )}
       </form>
 
       {(error || creditError) && !showPurchasePrompt && (
