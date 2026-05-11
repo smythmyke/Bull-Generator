@@ -483,3 +483,17 @@ export interface PatentDossier {
 export async function fetchPatentDossier(patentNumber: string): Promise<PatentDossier> {
   return callAI<PatentDossier>('/patent-dossier', { patentNumber });
 }
+
+export type ClaimScopeLabel = 'narrow' | 'moderate' | 'broad';
+
+export interface DossierSummary {
+  patentNumber: string;
+  executiveOverview: string;
+  claimScope: { label: ClaimScopeLabel; rationale: string };
+  generatedAt: string;
+  cached: boolean;
+}
+
+export async function fetchDossierSummary(patentNumber: string): Promise<DossierSummary> {
+  return callAI<DossierSummary>('/dossier-summary', { patentNumber });
+}

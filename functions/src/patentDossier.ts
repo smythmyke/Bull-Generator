@@ -15,6 +15,7 @@
  */
 
 import * as admin from "firebase-admin";
+import {GoogleGenerativeAI} from "@google/generative-ai";
 import {
   stripHtml,
   extractItemprop,
@@ -121,6 +122,16 @@ export interface PatentDossier {
   citations: DossierCitations;
   classification: DossierClassification;
   similar: DossierSimilar[];
+}
+
+export type ClaimScopeLabel = "narrow" | "moderate" | "broad";
+
+export interface DossierSummary {
+  patentNumber: string;
+  executiveOverview: string;
+  claimScope: { label: ClaimScopeLabel; rationale: string };
+  generatedAt: string;
+  cached: boolean;
 }
 
 // ── Number normalization ──
@@ -599,4 +610,198 @@ export async function handlePatentDossierRequest(
   });
 
   return { dossier };
+}
+
+// ── AI summary ──────────────────────────────────────────────────────────
+
+const SUMMARY_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days — summary is deterministic per dossier
+
+const SUMMARY_SYSTEM_PROMPT = `You are a patent analyst writing executive-grade summaries of granted patents for non-lawyer readers (PMs, founders, R&D leaders).
+
+Given a patent's title, abstract, independent claims, and CPC classifications, produce a STRICT JSON response matching exactly this schema:
+
+{
+  "executiveOverview": "string — 2 to 3 paragraphs of plain-English prose. First paragraph: what the invention is, in everyday terms, naming the technical problem it solves. Second paragraph: how it works mechanically (one level deeper than the abstract). Optional third paragraph: practical scope — what kinds of products or systems this likely reads on. Avoid legal jargon. Avoid 'this patent claims' boilerplate. Write declaratively.",
+  "claimScope": {
+    "label": "narrow | moderate | broad",
+    "rationale": "string — one or two sentences explaining the call. Reference specific limitations in the independent claims that narrowed or broadened the scope."
+  }
+}
+
+Rules:
+- Return ONLY the JSON object. No markdown. No prose before or after.
+- "narrow" = claim limited by multiple specific structural / numeric / configurational features that pin it to one implementation.
+- "moderate" = claim has clear functional limitations but covers a recognizable family of implementations.
+- "broad" = claim covers the core function with few structural constraints (rare for granted utility patents post-Alice).
+- Cite at least one specific limitation when justifying the scope label.
+- Executive overview must be readable by a smart non-engineer. No "the apparatus" / "said device" prose.`;
+
+interface DossierSummaryAiResponse {
+  executiveOverview?: string;
+  claimScope?: { label?: string; rationale?: string };
+}
+
+function buildSummaryPrompt(dossier: PatentDossier): string {
+  const independentClaims = dossier.claims.items
+    .filter((c) => c.isIndependent)
+    .slice(0, 4)
+    .map((c) => `Claim ${c.number}: ${c.text}`)
+    .join("\n\n");
+
+  const cpcLines = dossier.classification.cpcCodes
+    .slice(0, 8)
+    .map((c) => `${c.primary ? "[PRIMARY] " : ""}${c.code} — ${c.label}`)
+    .join("\n");
+
+  return `Patent ${dossier.patentNumber} — "${dossier.header.title}"
+Assignee: ${dossier.header.currentAssignee}
+Priority: ${dossier.header.priorityDate}
+
+ABSTRACT:
+${dossier.header.abstract}
+
+INDEPENDENT CLAIMS:
+${independentClaims}
+
+CPC CLASSIFICATIONS:
+${cpcLines}`;
+}
+
+function normalizeClaimScopeLabel(raw?: string): ClaimScopeLabel {
+  const v = (raw || "").toLowerCase().trim();
+  if (v === "narrow" || v === "moderate" || v === "broad") return v;
+  return "moderate";
+}
+
+async function generateSummary(dossier: PatentDossier): Promise<DossierSummary> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("GEMINI_API_KEY not configured");
+  }
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const model = genAI.getGenerativeModel({model: "gemini-2.5-flash"});
+
+  const result = await model.generateContent({
+    contents: [{
+      role: "user",
+      parts: [{text: SUMMARY_SYSTEM_PROMPT + "\n\n" + buildSummaryPrompt(dossier)}],
+    }],
+    generationConfig: {
+      temperature: 0.4,
+      maxOutputTokens: 2048,
+      responseMimeType: "application/json",
+    },
+  });
+
+  const text = result.response.text();
+  let parsed: DossierSummaryAiResponse;
+  try {
+    parsed = JSON.parse(text);
+  } catch (e) {
+    throw new Error(`AI summary returned non-JSON: ${text.slice(0, 200)}`);
+  }
+
+  if (!parsed.executiveOverview || !parsed.claimScope) {
+    throw new Error("AI summary missing required fields");
+  }
+
+  return {
+    patentNumber: dossier.patentNumber,
+    executiveOverview: parsed.executiveOverview.trim(),
+    claimScope: {
+      label: normalizeClaimScopeLabel(parsed.claimScope.label),
+      rationale: (parsed.claimScope.rationale || "").trim(),
+    },
+    generatedAt: new Date().toISOString(),
+    cached: false,
+  };
+}
+
+async function readSummaryCache(
+  db: admin.firestore.Firestore,
+  patentNumber: string
+): Promise<DossierSummary | null> {
+  const snap = await db.collection(CACHE_COLLECTION).doc(patentNumber).get();
+  if (!snap.exists) return null;
+  const data = snap.data();
+  const summary = data?.aiSummary as DossierSummary | undefined;
+  if (!summary) return null;
+  const generatedAt = data?.aiSummaryWrittenAt as admin.firestore.Timestamp | undefined;
+  const writtenAtMs = generatedAt?.toMillis() ?? 0;
+  if (Date.now() - writtenAtMs > SUMMARY_TTL_MS) return null;
+  return { ...summary, cached: true };
+}
+
+async function writeSummaryCache(
+  db: admin.firestore.Firestore,
+  patentNumber: string,
+  summary: DossierSummary
+): Promise<void> {
+  await db.collection(CACHE_COLLECTION).doc(patentNumber).set(
+    {
+      aiSummary: { ...summary, cached: false },
+      aiSummaryWrittenAt: admin.firestore.FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
+}
+
+export interface DossierSummaryResult {
+  summary?: DossierSummary;
+  error?: string;
+  code?: "invalid_number" | "fetch_failed" | "parse_failed" | "not_found" | "ai_failed";
+}
+
+export async function handleDossierSummaryRequest(
+  body: PatentDossierRequest
+): Promise<DossierSummaryResult> {
+  const normalized = normalizePatentNumber(body.patentNumber || "");
+  if (!normalized || normalized.length < 5) {
+    return { error: "Invalid patent number", code: "invalid_number" };
+  }
+
+  const db = admin.firestore();
+
+  // Cache hit
+  const cachedSummary = await readSummaryCache(db, normalized);
+  if (cachedSummary) return { summary: cachedSummary };
+
+  // Need the dossier first — pull from cache or fetch fresh
+  let dossier = await readCache(db, normalized);
+  if (!dossier) {
+    let html: string;
+    try {
+      html = await fetchPatentHtml(normalized);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      return { error: `Fetch failed: ${message}`, code: "fetch_failed" };
+    }
+    try {
+      dossier = buildDossierFromHtml(normalized, html);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      return { error: `Parse failed: ${message}`, code: "parse_failed" };
+    }
+    if (!dossier.header.title && !dossier.header.applicationNumber) {
+      return { error: `Patent not found: ${normalized}`, code: "not_found" };
+    }
+    // Persist the fresh dossier alongside the upcoming summary
+    writeCache(db, normalized, dossier).catch((e) => {
+      console.warn(`[Dossier] Cache write failed for ${normalized}:`, e);
+    });
+  }
+
+  let summary: DossierSummary;
+  try {
+    summary = await generateSummary(dossier);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    return { error: `AI summary failed: ${message}`, code: "ai_failed" };
+  }
+
+  writeSummaryCache(db, normalized, summary).catch((e) => {
+    console.warn(`[Dossier] Summary cache write failed for ${normalized}:`, e);
+  });
+
+  return { summary };
 }

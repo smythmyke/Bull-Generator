@@ -6,9 +6,10 @@ import {handleCreditRequest, useCredit, FREE_ENDPOINTS} from "./credits";
 import {handleWebhookEvent} from "./stripe";
 import {createEouHandler} from "./eou";
 import {handleAdminRequest} from "./admin";
-import {handlePatentDossierRequest} from "./patentDossier";
+import {handlePatentDossierRequest, handleDossierSummaryRequest} from "./patentDossier";
 
 const DOSSIER_CREDIT_COST = 3;
+const SUMMARY_CREDIT_COST = 1;
 
 admin.initializeApp();
 
@@ -117,6 +118,34 @@ export const ai = functions.runWith({ timeoutSeconds: 300, memory: "512MB" }).ht
           res.status(200).json({data: result.dossier, credits: deductResult});
         } else {
           res.status(200).json({data: result.dossier});
+        }
+        return;
+      }
+
+      // Dossier AI summary — on-demand. Free on cache hit; 1 credit on fresh generate.
+      if (path === "/dossier-summary") {
+        const db = admin.firestore();
+        if (!checkRateLimit(decodedToken.uid)) {
+          res.status(429).json({error: "Rate limit exceeded. Try again in an hour."});
+          return;
+        }
+        const result = await handleDossierSummaryRequest(req.body);
+        if (result.error) {
+          const statusCode = result.code === "invalid_number" ? 400 :
+            result.code === "not_found" ? 404 : 502;
+          res.status(statusCode).json({error: result.error, code: result.code});
+          return;
+        }
+        if (result.summary && !result.summary.cached) {
+          const deductResult = await useCredit(
+            db,
+            decodedToken.uid,
+            `dossier-summary:${result.summary.patentNumber}`,
+            SUMMARY_CREDIT_COST
+          );
+          res.status(200).json({data: result.summary, credits: deductResult});
+        } else {
+          res.status(200).json({data: result.summary});
         }
         return;
       }
