@@ -3,8 +3,9 @@ import { Card, CardHeader, CardTitle, CardContent, CardDescription } from './ui/
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Button } from './ui/button';
-import UnifiedSearchTab from './tabs/UnifiedSearchTab';
 import ConceptMapperTab from './tabs/ConceptMapperTab';
+import PatentTab from './tabs/PatentTab';
+import WorkflowsTab from './tabs/WorkflowsTab';
 import ToolsTab from './tabs/ToolsTab';
 import CreditsTab from './tabs/CreditsTab';
 import AdminTab from './tabs/AdminTab';
@@ -163,20 +164,25 @@ const BooleanSearchGenerator: React.FC<BooleanSearchGeneratorProps> = ({ activeT
 
         <CardContent className="pb-3">
           <Tabs value={activeTab || 'search'} onValueChange={onTabChange} className="space-y-3">
-            <TabsList className={`grid w-full ${isAdmin ? 'grid-cols-4' : 'grid-cols-3'} h-8`}>
+            <TabsList className={`grid w-full ${isAdmin ? 'grid-cols-5' : 'grid-cols-4'} h-8`}>
               <TabsTrigger value="search" className="text-xs px-1">Search</TabsTrigger>
-              <TabsTrigger value="ai-analysis" className="text-xs px-1">Concepts <span className="ml-0.5 text-[8px] font-bold px-1 py-px rounded bg-gradient-to-r from-blue-500 to-purple-500 text-white leading-none">PRO</span></TabsTrigger>
+              <TabsTrigger value="patent" className="text-xs px-1">Patent</TabsTrigger>
+              <TabsTrigger value="workflows" className="text-xs px-1">Workflows</TabsTrigger>
               <TabsTrigger value="tools" className="text-xs px-1">Tools</TabsTrigger>
               {isAdmin && <TabsTrigger value="admin" className="text-xs px-1">Admin</TabsTrigger>}
             </TabsList>
 
             {/* forceMount keeps state alive across tab switches; style hides inactive tabs */}
             <TabsContent value="search" forceMount style={(activeTab || 'search') !== 'search' ? { display: 'none' } : undefined}>
-              <UnifiedSearchTab />
+              <ConceptMapperTab />
             </TabsContent>
 
-            <TabsContent value="ai-analysis" forceMount style={(activeTab || 'search') !== 'ai-analysis' ? { display: 'none' } : undefined}>
-              <ConceptMapperTab />
+            <TabsContent value="patent" forceMount style={(activeTab || 'search') !== 'patent' ? { display: 'none' } : undefined}>
+              <PatentTab />
+            </TabsContent>
+
+            <TabsContent value="workflows" forceMount style={(activeTab || 'search') !== 'workflows' ? { display: 'none' } : undefined}>
+              <WorkflowsTab />
             </TabsContent>
 
             <TabsContent value="tools" forceMount style={(activeTab || 'search') !== 'tools' ? { display: 'none' } : undefined}>
