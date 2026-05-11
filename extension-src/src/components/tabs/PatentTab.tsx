@@ -208,14 +208,17 @@ const PatentTab: React.FC = () => {
           )}
 
           <Button
-            disabled
             variant="default"
             className="w-full h-8 text-xs"
-            title="Full dossier viewer ships in the next phase"
+            onClick={() => {
+              const url = chrome.runtime.getURL(
+                `patent.html?number=${encodeURIComponent(dossier.patentNumber)}`
+              );
+              chrome.tabs.create({ url });
+            }}
           >
             <ExternalLink className="mr-1.5 h-3 w-3" />
             Open full dossier
-            <span className="ml-2 text-[9px] uppercase tracking-wide opacity-70">soon</span>
           </Button>
         </div>
       )}
