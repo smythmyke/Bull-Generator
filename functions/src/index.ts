@@ -6,6 +6,9 @@ import {handleCreditRequest, useCredit, FREE_ENDPOINTS} from "./credits";
 import {handleWebhookEvent} from "./stripe";
 import {createEouHandler} from "./eou";
 import {handleAdminRequest} from "./admin";
+import {handlePatentDossierRequest} from "./patentDossier";
+
+const DOSSIER_CREDIT_COST = 3;
 
 admin.initializeApp();
 
@@ -85,6 +88,36 @@ export const ai = functions.runWith({ timeoutSeconds: 300, memory: "512MB" }).ht
       if (path.startsWith("/credits/")) {
         const result = await handleCreditRequest(path, req.body, decodedToken);
         res.status(200).json({data: result});
+        return;
+      }
+
+      // Patent Dossier endpoint — separate from AI proxy. Credits deducted
+      // only on a fresh fetch (cache hits are free for the caller).
+      if (path === "/patent-dossier") {
+        const db = admin.firestore();
+        if (!checkRateLimit(decodedToken.uid)) {
+          res.status(429).json({error: "Rate limit exceeded. Try again in an hour."});
+          return;
+        }
+        const result = await handlePatentDossierRequest(req.body);
+        if (result.error) {
+          const statusCode = result.code === "invalid_number" ? 400 :
+            result.code === "not_found" ? 404 : 502;
+          res.status(statusCode).json({error: result.error, code: result.code});
+          return;
+        }
+        // Only charge when we actually fetched fresh data
+        if (result.dossier && !result.dossier.cached) {
+          const deductResult = await useCredit(
+            db,
+            decodedToken.uid,
+            `dossier:${result.dossier.patentNumber}`,
+            DOSSIER_CREDIT_COST
+          );
+          res.status(200).json({data: result.dossier, credits: deductResult});
+        } else {
+          res.status(200).json({data: result.dossier});
+        }
         return;
       }
 

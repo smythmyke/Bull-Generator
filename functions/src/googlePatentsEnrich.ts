@@ -36,7 +36,7 @@ export interface EnrichedPatentData {
 // ── HTML Parsing Helpers ──
 
 /** Strip HTML tags, collapse whitespace */
-function stripHtml(html: string): string {
+export function stripHtml(html: string): string {
   return html
     .replace(/<[^>]+>/g, " ")
     .replace(/&amp;/g, "&")
@@ -53,7 +53,7 @@ function stripHtml(html: string): string {
  * Extract all values for a given itemprop from HTML.
  * Returns the text content between the itemprop tag and its closing tag.
  */
-function extractItemprop(html: string, prop: string): string[] {
+export function extractItemprop(html: string, prop: string): string[] {
   const results: string[] = [];
   const pattern = new RegExp(
     `itemprop="${prop}"[^>]*>([^<]*)`,
@@ -68,7 +68,7 @@ function extractItemprop(html: string, prop: string): string[] {
 }
 
 /** Extract a single itemprop value */
-function extractFirstItemprop(html: string, prop: string): string {
+export function extractFirstItemprop(html: string, prop: string): string {
   const vals = extractItemprop(html, prop);
   return vals[0] || "";
 }
@@ -77,7 +77,7 @@ function extractFirstItemprop(html: string, prop: string): string {
  * Extract datetime attribute from itemprop tags.
  * e.g. <time itemprop="priorityDate" datetime="2017-10-23">
  */
-function extractDatetimeItemprop(html: string, prop: string): string {
+export function extractDatetimeItemprop(html: string, prop: string): string {
   const match = html.match(
     new RegExp(`itemprop="${prop}"[^>]*datetime="([^"]*)"`, "i")
   );

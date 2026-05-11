@@ -34,3 +34,6 @@ sample-report.html
 # OS files
 .DS_Store
 Thumbs.db
+
+# Patent dossier test fixtures (regeneratable via the GP XHR endpoint)
+gp-fixture-*.html
