@@ -244,15 +244,51 @@ const LegalStatusSection: React.FC<{ dossier: PatentDossier }> = ({ dossier }) =
   </Section>
 );
 
+const FAMILY_TABLE_LIMIT = 10;
+
 const FamilySection: React.FC<{ dossier: PatentDossier }> = ({ dossier }) => {
   const members: DossierFamilyMember[] = dossier.family.members;
+  const [showAll, setShowAll] = useState(false);
+
+  // Jurisdiction counts for the summary chip row
+  const byJurisdiction = useMemo(() => {
+    const map = new Map<string, number>();
+    members.forEach((m) => map.set(m.jurisdiction, (map.get(m.jurisdiction) || 0) + 1));
+    return [...map.entries()].sort((a, b) => b[1] - a[1]);
+  }, [members]);
+
+  // Sort by date desc, but always pin the current patent first so it stays visible.
+  const sorted = useMemo(() => {
+    const others = members.filter((m) => m.publicationNumber !== dossier.patentNumber);
+    others.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    const current = members.find((m) => m.publicationNumber === dossier.patentNumber);
+    return current ? [current, ...others] : others;
+  }, [members, dossier.patentNumber]);
+
+  const showToggle = members.length > FAMILY_TABLE_LIMIT;
+
   return (
     <Section
       id="family"
       num={4}
       title="Family Map"
-      intro="All worldwide applications claiming priority from the same root filing. Larger families render as a priority-chain tree (future enhancement)."
+      intro={`${members.length} ${members.length === 1 ? 'member' : 'members'} across ${
+        byJurisdiction.length
+      } ${byJurisdiction.length === 1 ? 'jurisdiction' : 'jurisdictions'}. The current publication is pinned at the top; the rest are sorted newest first.`}
     >
+      {byJurisdiction.length > 1 && (
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {byJurisdiction.map(([j, count]) => (
+            <span
+              key={j}
+              className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200"
+            >
+              {j} · {count}
+            </span>
+          ))}
+        </div>
+      )}
+
       <table className="w-full border-collapse text-xs">
         <thead>
           <tr className="bg-slate-50">
@@ -271,20 +307,44 @@ const FamilySection: React.FC<{ dossier: PatentDossier }> = ({ dossier }) => {
           </tr>
         </thead>
         <tbody>
-          {members.map((m, i) => (
-            <tr key={i} className={m.publicationNumber === dossier.patentNumber ? 'bg-blue-50' : ''}>
-              <td className="border border-slate-200 px-3 py-2">{m.jurisdiction}</td>
-              <td className="border border-slate-200 px-3 py-2 font-mono text-blue-700">
-                <a href={gpUrl(m.publicationNumber)} target="_blank" rel="noopener noreferrer" className="hover:underline">
-                  {m.publicationNumber}
-                </a>
-              </td>
-              <td className="border border-slate-200 px-3 py-2 text-slate-600">{m.type}</td>
-              <td className="border border-slate-200 px-3 py-2 text-slate-600">{m.date}</td>
-            </tr>
-          ))}
+          {sorted.map((m, i) => {
+            const isCurrent = m.publicationNumber === dossier.patentNumber;
+            // Rows beyond the limit hide in the UI but always print
+            const hideOnScreen = !showAll && !isCurrent && i >= FAMILY_TABLE_LIMIT;
+            return (
+              <tr
+                key={`${m.publicationNumber}-${i}`}
+                className={`${isCurrent ? 'bg-blue-50' : ''} ${
+                  hideOnScreen ? 'hidden print:table-row' : ''
+                }`}
+              >
+                <td className="border border-slate-200 px-3 py-2">{m.jurisdiction}</td>
+                <td className="border border-slate-200 px-3 py-2 font-mono text-blue-700">
+                  <a
+                    href={gpUrl(m.publicationNumber)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hover:underline"
+                  >
+                    {m.publicationNumber}
+                  </a>
+                </td>
+                <td className="border border-slate-200 px-3 py-2 text-slate-600">{m.type}</td>
+                <td className="border border-slate-200 px-3 py-2 text-slate-600">{m.date}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
+
+      {showToggle && (
+        <button
+          onClick={() => setShowAll((v) => !v)}
+          className="mt-2 text-[11px] font-semibold text-blue-600 hover:underline print:hidden"
+        >
+          {showAll ? `Show fewer` : `Show all ${members.length} members`}
+        </button>
+      )}
     </Section>
   );
 };
@@ -304,6 +364,13 @@ const ClaimsSection: React.FC<{ dossier: PatentDossier }> = ({ dossier }) => {
   }, [items]);
   const independents = items.filter((c) => c.isIndependent);
 
+  const [openClaims, setOpenClaims] = useState<Set<number>>(new Set());
+  const expandAll = useCallback(
+    () => setOpenClaims(new Set(independents.map((c) => c.number))),
+    [independents]
+  );
+  const collapseAll = useCallback(() => setOpenClaims(new Set()), []);
+
   return (
     <Section
       id="claims"
@@ -311,6 +378,22 @@ const ClaimsSection: React.FC<{ dossier: PatentDossier }> = ({ dossier }) => {
       title="Claim Tree"
       intro={`${dossier.claims.totalCount} total claims · ${dossier.claims.independentNumbers.length} independent. Click any claim to expand the verbatim text.`}
     >
+      {independents.length > 1 && (
+        <div className="flex gap-1.5 mb-2 print:hidden">
+          <button
+            onClick={expandAll}
+            className="text-[11px] font-semibold px-2 py-0.5 rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+          >
+            Expand all
+          </button>
+          <button
+            onClick={collapseAll}
+            className="text-[11px] font-semibold px-2 py-0.5 rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+          >
+            Collapse all
+          </button>
+        </div>
+      )}
       <ul className="space-y-3">
         {independents.map((c) => (
           <li key={c.number} className="border-b border-slate-200 pb-3 last:border-b-0">
@@ -320,7 +403,19 @@ const ClaimsSection: React.FC<{ dossier: PatentDossier }> = ({ dossier }) => {
               </span>
               <span className="text-xs font-semibold text-slate-700">Independent</span>
             </div>
-            <details className="mt-1">
+            <details
+              className="mt-1 print:open"
+              open={openClaims.has(c.number)}
+              onToggle={(e) => {
+                const isOpen = (e.target as HTMLDetailsElement).open;
+                setOpenClaims((prev) => {
+                  const next = new Set(prev);
+                  if (isOpen) next.add(c.number);
+                  else next.delete(c.number);
+                  return next;
+                });
+              }}
+            >
               <summary className="cursor-pointer text-blue-600 text-xs hover:underline">Show verbatim text</summary>
               <div className="mt-2 px-3 py-2 bg-slate-50 border-l-[3px] border-blue-600 rounded-r text-xs leading-relaxed text-slate-700">
                 {c.text}

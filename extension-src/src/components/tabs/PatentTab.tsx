@@ -90,6 +90,13 @@ const PatentTab: React.FC = () => {
     };
   }, []);
 
+  // Auto-dismiss the error alert after 6 seconds so it doesn't linger.
+  useEffect(() => {
+    if (!error) return;
+    const t = setTimeout(() => setError(null), 6000);
+    return () => clearTimeout(t);
+  }, [error]);
+
   const handleDetect = useCallback(async () => {
     const detected = await detectPatentFromActiveTab();
     if (detected) {

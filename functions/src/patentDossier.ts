@@ -331,8 +331,12 @@ function parseFamily(html: string): DossierFamily {
     });
   }
 
-  // Family id — try the page-level "family" itemprop or fall back to first member
-  const familyId = extractFirstItemprop(html, "id") || "";
+  // Family id appears inside <section itemprop="family"> as an unstructured
+  // <h2>ID=NNNN</h2> heading. Extract from there; fall back to empty.
+  const familyIdMatch = html.match(
+    /<section[^>]*itemprop="family"[\s\S]*?<h2[^>]*>\s*ID\s*=\s*(\d+)\s*<\/h2>/i
+  );
+  const familyId = familyIdMatch?.[1] || "";
 
   return { familyId, members };
 }
@@ -464,6 +468,13 @@ function parseSimilar(html: string, selfPubNum: string): DossierSimilar[] {
 
 // ── Fetch + compose ──
 
+class PatentNotFoundError extends Error {
+  constructor(patentNumber: string) {
+    super(`Patent ${patentNumber} not found on Google Patents`);
+    this.name = "PatentNotFoundError";
+  }
+}
+
 async function fetchPatentHtml(patentNumber: string): Promise<string> {
   const url = `https://patents.google.com/xhr/result?id=patent/${patentNumber}/en`;
   const response = await fetch(url, {
@@ -473,6 +484,9 @@ async function fetchPatentHtml(patentNumber: string): Promise<string> {
     },
     signal: AbortSignal.timeout(20000),
   });
+  if (response.status === 404) {
+    throw new PatentNotFoundError(patentNumber);
+  }
   if (!response.ok) {
     throw new Error(`HTTP ${response.status} fetching ${patentNumber}`);
   }
@@ -588,6 +602,12 @@ export async function handlePatentDossierRequest(
   try {
     html = await fetchPatentHtml(normalized);
   } catch (e) {
+    if (e instanceof PatentNotFoundError) {
+      return {
+        error: `No patent found with number ${normalized}. Check the format (e.g. US10867416B2) or verify it exists on Google Patents.`,
+        code: "not_found",
+      };
+    }
     const message = e instanceof Error ? e.message : String(e);
     return { error: `Fetch failed: ${message}`, code: "fetch_failed" };
   }
@@ -601,7 +621,10 @@ export async function handlePatentDossierRequest(
   }
 
   if (!dossier.header.title && !dossier.header.applicationNumber) {
-    return { error: `Patent not found: ${normalized}`, code: "not_found" };
+    return {
+      error: `No patent found with number ${normalized}. Check the format (e.g. US10867416B2) or verify it exists on Google Patents.`,
+      code: "not_found",
+    };
   }
 
   // Write-through cache; don't block on failure
@@ -773,6 +796,12 @@ export async function handleDossierSummaryRequest(
     try {
       html = await fetchPatentHtml(normalized);
     } catch (e) {
+      if (e instanceof PatentNotFoundError) {
+        return {
+          error: `No patent found with number ${normalized}. Check the format (e.g. US10867416B2) or verify it exists on Google Patents.`,
+          code: "not_found",
+        };
+      }
       const message = e instanceof Error ? e.message : String(e);
       return { error: `Fetch failed: ${message}`, code: "fetch_failed" };
     }
@@ -783,7 +812,10 @@ export async function handleDossierSummaryRequest(
       return { error: `Parse failed: ${message}`, code: "parse_failed" };
     }
     if (!dossier.header.title && !dossier.header.applicationNumber) {
-      return { error: `Patent not found: ${normalized}`, code: "not_found" };
+      return {
+        error: `No patent found with number ${normalized}. Check the format (e.g. US10867416B2) or verify it exists on Google Patents.`,
+        code: "not_found",
+      };
     }
     // Persist the fresh dossier alongside the upcoming summary
     writeCache(db, normalized, dossier).catch((e) => {

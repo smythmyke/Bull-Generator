@@ -236,22 +236,40 @@ The Workflows tab will likely use asynchronous progress streaming (similar to Ph
 
 ---
 
-## Part 6 — Build status (as of 2026-05-11)
+## Part 6 — Build status
 
-Maps every feature in this document to where it stands. Update when a section ships or is paused.
+Master tracker for everything in this document. Update when a phase ships or is paused.
 
-### Shipped
+### Shipped — Patent Dossier (per-patent surface)
 
-| Feature | Source list | Location |
-|---|---|---|
-| Patent family lookup | Tier 1 #1 | Patent Dossier § 3 |
-| Citation network analysis | Tier 1 #2 | Patent Dossier § 5 |
-| Claim tree visualization | Tier 1 #5 | Patent Dossier § 4 |
-| Legal status check | Tier 1 #6 | Patent Dossier § 2 |
-| Classification context (CPC) | adjacent to Tier 1 | Patent Dossier § 6 |
-| Similar patents | adjacent to Tier 1 | Patent Dossier § 7 |
-| AI plain-English summary | Part 5 W3 future (seeded) | Patent Dossier § 8 (Gemini-backed, on-demand) |
-| Export / Print-to-PDF | adjacent | Patent Dossier § 9 |
+Cumulative work to land a complete per-patent investigation flow, side panel + full tab.
+
+| Phase | Date | What shipped | Commit |
+|---|---|---|---|
+| 0 | 2026-05-09 | Side-panel tab consolidation; Patent + Workflows scaffold tabs | `e10b3e9` |
+| 1 | 2026-05-10 | Dossier spec (`research/patent-dossier-spec.md`) + static HTML mockup | `a36ed22` |
+| 2A | 2026-05-10 | `/patent-dossier` Cloud Function endpoint with all GP-scrape parsers + 24h cache | `21d66ca` |
+| 2B | 2026-05-10 | Side-panel chips wired to live endpoint | `f8ee74f` |
+| 2C | 2026-05-10 | `patent.html` full-tab route + 9-section React renderer | `1cff587` |
+| 2D | 2026-05-11 | `/dossier-summary` Gemini-backed endpoint + § 1 AI Summary section, auto-load, bundled pricing | `5c9d6ef`, `b2c5151` |
+| 2-polish | 2026-05-11 | Sticky brand header (logo + name), scroll-spy quick-nav, Chrome Web Store CTAs (header badge + footer URL), section IDs + smooth scroll | `9f5e9b4` |
+| 2-polish | 2026-05-11 | Auto-detect patent number from active Google Patents tab | `dfab7f6` |
+| 2-polish | 2026-05-11 | Family ID parser fix, large-family jurisdiction chips + 10-row cap with "Show all" toggle, claim Expand-all/Collapse-all, status enum verified on `Expired` | pending commit |
+| 2-polish | 2026-05-11 | Better not-found error path (404 → friendly message instead of 502); side-panel error auto-dismisses after 6s | pending commit |
+
+**Dossier sections live in production:**
+
+| § | Section | Source list | Notes |
+|---|---|---|---|
+| 1 | AI Summary | Part 5 future (seeded) | Auto-loads on dossier open; bundled with the 3-credit dossier purchase; 30-day cache |
+| 2 | Abstract | adjacent | Verbatim from GP |
+| 3 | Legal Status | Tier 1 #6 | Current jurisdiction only; per-member tracking awaits Phase 2 ODP |
+| 4 | Family Map | Tier 1 #1 | Members + jurisdiction chips; current patent pinned; capped + toggle for big families |
+| 5 | Claim Tree | Tier 1 #5 | Independents + dep tree, expand-all / collapse-all, verbatim text under `<details>` |
+| 6 | Citation Network | Tier 1 #2 | Forward + backward, top 10 each |
+| 7 | Classification | adjacent to Tier 1 | CPC leaf codes + descriptions + primary marker |
+| 8 | Similar Patents | adjacent | GP's similar-documents list, filters out the patent itself |
+| 9 | Export & Share | adjacent | Print to PDF + Google Patents link |
 
 ### Scaffolded but not wired
 
@@ -262,13 +280,28 @@ Maps every feature in this document to where it stands. Update when a section sh
 
 ### Defined but not started
 
-- **Tier 1 ODP-dependent**: file wrapper retrieval, office action analysis, IDS generation
-- **Tier 2**: FTO analysis (as a side-panel tool), examiner statistics, claim charting, patent landscape, assignment / title verification
-- **Tier 3**: annuity tracking, PCT national phase deadlines, spec↔claim consistency, claim drafting assistant, reference numeral extraction, patent valuation signals
-- **Tier 4**: IPR/PGR prep, Markman support, patent translation, damages support, inventor tracking, lien check
-- **Workflow agents W1–W4**: Prior Art Hunter, Claim Analyzer, FTO Agent, Technology Landscape Agent
-- **Phase 3 workflow agents**: Citation Network agent, Examiner Rejection Responder, Patent Family Tracker, Translation-Aware Search, Design Patent Visual Search
+- **Tier 1 ODP-dependent**: file wrapper retrieval · office action analysis · IDS generation
+- **Tier 2**: FTO analysis (as a side-panel tool) · examiner statistics · claim charting · patent landscape · assignment / title verification
+- **Tier 3**: annuity tracking · PCT national phase deadlines · spec↔claim consistency · claim drafting assistant · reference numeral extraction · patent valuation signals
+- **Tier 4**: IPR/PGR prep · Markman support · patent translation · damages support · inventor tracking · lien check
+- **Workflow agents W1–W4** (per [`ROADMAP.md`](../ROADMAP.md) Phase 2): Prior Art Hunter · Claim Analyzer · FTO Agent · Technology Landscape Agent
+- **Phase 3 workflow agents** (per [`ROADMAP.md`](../ROADMAP.md) Phase 3): Citation Network agent · Examiner Rejection Responder · Patent Family Tracker · Translation-Aware Search · Design Patent Visual Search
 
 ### Gated on validation
 
-Per ROADMAP.md, the workflow agents (Part 5) are gated on pricing validation interviews. Side-panel features (Parts 1–4) are not — they're judgment calls, not WTP-dependent.
+Per [`ROADMAP.md`](../ROADMAP.md), the workflow agents (Part 5) are notionally gated on pricing validation interviews (5 cold LinkedIn outreaches at the proposed price points). Decision 2026-05-10: **proceed without validation gating** due to low user base — pricing-interview signal is too weak to be useful, so the team will build first and price-test live. Side-panel features (Parts 1–4) are not gated.
+
+### Next up
+
+Top of the queue, in rough priority order. Pick based on appetite for new data sources vs. polish.
+
+1. **Tier 1 ODP integration** — file wrapper / Office Action analyzer / examiner stats. New data source (USPTO Open Data Portal API), three new dossier sections, AI-powered OA analysis. ~1 week. Biggest user-visible expansion; unlocks the prosecution-heavy half of Tier 1.
+2. **Workflows tab — Prior Art Hunter agent (W1)** — flagship deliverable at $29–99 per run. Claude Agent SDK integration, MCP tool wrappers for Boolean gen + GP search, verification-required output. ~1 week. Highest revenue ceiling; per ROADMAP this is build-first now.
+3. **Tier 2 inside dossier** — examiner statistics (USPTO PatentsView free API) is the lightest of the Tier 2 features and slots in as a new dossier section. ~2 days.
+4. **Patent landscape (Tier 2 #10)** — CPC clustering + competitor overlay. Probably belongs in the Workflows tab as the W4 deliverable; not a per-patent feature.
+
+Pause-the-build polish (do anytime):
+- Family ID surfaced in the dossier UI metadata (currently parsed but not rendered)
+- Side-panel error auto-dismiss extended to credit errors (currently only patent-fetch errors auto-dismiss)
+- Family-tree visualization for large families (currently a flat table; would render better as a priority-chain tree)
+- Citation graph viz for the Citation Network section
