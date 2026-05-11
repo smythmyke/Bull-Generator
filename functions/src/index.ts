@@ -9,7 +9,6 @@ import {handleAdminRequest} from "./admin";
 import {handlePatentDossierRequest, handleDossierSummaryRequest} from "./patentDossier";
 
 const DOSSIER_CREDIT_COST = 3;
-const SUMMARY_CREDIT_COST = 1;
 
 admin.initializeApp();
 
@@ -122,9 +121,9 @@ export const ai = functions.runWith({ timeoutSeconds: 300, memory: "512MB" }).ht
         return;
       }
 
-      // Dossier AI summary — on-demand. Free on cache hit; 1 credit on fresh generate.
+      // Dossier AI summary — bundled with the 3-credit dossier fetch, so this
+      // endpoint is free to call. Rate-limited like other writes.
       if (path === "/dossier-summary") {
-        const db = admin.firestore();
         if (!checkRateLimit(decodedToken.uid)) {
           res.status(429).json({error: "Rate limit exceeded. Try again in an hour."});
           return;
@@ -136,17 +135,7 @@ export const ai = functions.runWith({ timeoutSeconds: 300, memory: "512MB" }).ht
           res.status(statusCode).json({error: result.error, code: result.code});
           return;
         }
-        if (result.summary && !result.summary.cached) {
-          const deductResult = await useCredit(
-            db,
-            decodedToken.uid,
-            `dossier-summary:${result.summary.patentNumber}`,
-            SUMMARY_CREDIT_COST
-          );
-          res.status(200).json({data: result.summary, credits: deductResult});
-        } else {
-          res.status(200).json({data: result.summary});
-        }
+        res.status(200).json({data: result.summary});
         return;
       }
 
