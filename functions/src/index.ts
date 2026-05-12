@@ -106,7 +106,8 @@ export const ai = functions.runWith({ timeoutSeconds: 300, memory: "512MB" }).ht
         const result = await handlePatentDossierRequest(req.body);
         if (result.error) {
           const statusCode = result.code === "invalid_number" ? 400 :
-            result.code === "not_found" ? 404 : 502;
+            result.code === "not_found" ? 404 :
+            result.code === "rate_limited" ? 429 : 502;
           res.status(statusCode).json({error: result.error, code: result.code});
           return;
         }
@@ -135,7 +136,8 @@ export const ai = functions.runWith({ timeoutSeconds: 300, memory: "512MB" }).ht
         const result = await handleDossierSummaryRequest(req.body);
         if (result.error) {
           const statusCode = result.code === "invalid_number" ? 400 :
-            result.code === "not_found" ? 404 : 502;
+            result.code === "not_found" ? 404 :
+            result.code === "rate_limited" ? 429 : 502;
           res.status(statusCode).json({error: result.error, code: result.code});
           return;
         }

@@ -23,6 +23,7 @@ import {
   ClaimScopeLabel,
 } from '../services/apiService';
 import { useAuthContext } from '../contexts/AuthContext';
+import IdsSection from './IdsSection';
 import { CheckCircle2, XCircle, Clock, AlertTriangle, ExternalLink, Printer, Sparkles, RefreshCw, Download } from 'lucide-react';
 
 // ── Visual helpers ──────────────────────────────────────────────────────
@@ -94,6 +95,7 @@ const NAV_SECTIONS = [
   { id: 'examiner', label: 'Examiner' },
   { id: 'prosecution', label: 'Prosecution' },
   { id: 'export', label: 'Export' },
+  { id: 'ids', label: 'IDS' },
 ];
 
 const CHROME_STORE_URL =
@@ -865,6 +867,8 @@ interface ProsecutionHistorySectionProps {
   outOfCoverage: boolean;
   unsupportedJurisdiction: boolean;
   onLoad: () => void;
+  analyses: Map<string, OfficeActionAnalysis>;
+  setAnalyses: React.Dispatch<React.SetStateAction<Map<string, OfficeActionAnalysis>>>;
 }
 
 const ProsecutionHistorySection: React.FC<ProsecutionHistorySectionProps> = ({
@@ -874,12 +878,13 @@ const ProsecutionHistorySection: React.FC<ProsecutionHistorySectionProps> = ({
   outOfCoverage,
   unsupportedJurisdiction,
   onLoad,
+  analyses,
+  setAnalyses,
 }) => {
   const [filter, setFilter] = useState<DocumentCategory | 'all'>('all');
 
-  // Per-OA analysis state. Keyed by documentId so analyses survive filter changes
-  // and are reusable across re-renders. Sets must be replaced (not mutated) for React.
-  const [analyses, setAnalyses] = useState<Map<string, OfficeActionAnalysis>>(new Map());
+  // Sibling per-OA UI state stays local — only the analyses map is lifted
+  // (consumed by § 12 IDS Generator).
   const [analyzing, setAnalyzing] = useState<Set<string>>(new Set());
   const [analysisErrors, setAnalysisErrors] = useState<Map<string, string>>(new Map());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -1377,6 +1382,8 @@ const PatentDossierPage: React.FC = () => {
   const [dossier, setDossier] = useState<PatentDossier | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<string | null>(null);
+  const [retryNonce, setRetryNonce] = useState(0);
 
   const [summary, setSummary] = useState<DossierSummary | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
@@ -1389,6 +1396,10 @@ const PatentDossierPage: React.FC = () => {
   const [examinerStats, setExaminerStats] = useState<ExaminerStats | null>(null);
   const [examinerLoading, setExaminerLoading] = useState(false);
   const [examinerError, setExaminerError] = useState<string | null>(null);
+
+  // OA analyses Map is lifted here so § 12 IDS can merge OA-cited art.
+  // Keyed by documentId.
+  const [oaAnalyses, setOaAnalyses] = useState<Map<string, OfficeActionAnalysis>>(new Map());
 
   const [activeId, setActiveId] = useState<string>(NAV_SECTIONS[0].id);
   // Click-driven nav temporarily wins over scroll observer to avoid flicker
@@ -1549,7 +1560,10 @@ const PatentDossierPage: React.FC = () => {
         }
       })
       .catch((e) => {
-        if (!cancelled) setError(e?.message || 'Failed to fetch dossier');
+        if (!cancelled) {
+          setError(e?.message || 'Failed to fetch dossier');
+          setErrorCode((e as { code?: string })?.code ?? null);
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -1557,7 +1571,7 @@ const PatentDossierPage: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [authLoading, user, patentNumber]);
+  }, [authLoading, user, patentNumber, retryNonce]);
 
   if (!patentNumber) {
     return (
@@ -1601,11 +1615,31 @@ const PatentDossierPage: React.FC = () => {
   }
 
   if (error) {
+    const isRateLimit = errorCode === 'rate_limited';
     return (
       <div className="max-w-3xl mx-auto px-8 py-16 text-center">
-        <AlertTriangle className="h-10 w-10 text-red-500 mx-auto mb-3" />
-        <h1 className="text-xl font-bold text-slate-800 mb-2">Couldn't load dossier</h1>
-        <p className="text-sm text-slate-600 mb-3">{error}</p>
+        <AlertTriangle className={`h-10 w-10 mx-auto mb-3 ${isRateLimit ? 'text-amber-500' : 'text-red-500'}`} />
+        <h1 className="text-xl font-bold text-slate-800 mb-2">
+          {isRateLimit ? 'Google Patents is throttling us' : "Couldn't load dossier"}
+        </h1>
+        <p className="text-sm text-slate-600 mb-4 max-w-md mx-auto">
+          {isRateLimit
+            ? 'Google’s servers are temporarily rate-limiting requests. This usually clears in 1–2 minutes. Please try again shortly.'
+            : error}
+        </p>
+        <div className="flex justify-center gap-2 mb-4">
+          <button
+            onClick={() => {
+              setError(null);
+              setErrorCode(null);
+              setRetryNonce((n) => n + 1);
+            }}
+            className="text-xs font-semibold px-4 py-2 rounded border bg-slate-800 text-white hover:bg-slate-700"
+          >
+            <RefreshCw className="inline h-3 w-3 mr-1.5 -mt-0.5" />
+            Try again
+          </button>
+        </div>
         <p className="text-xs text-slate-500">
           Patent number tried: <code className="font-mono">{patentNumber}</code>
         </p>
@@ -1655,8 +1689,15 @@ const PatentDossierPage: React.FC = () => {
           }
           unsupportedJurisdiction={!/^US/i.test(dossier.patentNumber)}
           onLoad={handleLoadHistory}
+          analyses={oaAnalyses}
+          setAnalyses={setOaAnalyses}
         />
         <ExportSection dossier={dossier} />
+        <IdsSection
+          dossier={dossier}
+          applicationNumber={history?.applicationNumber}
+          oaAnalyses={Array.from(oaAnalyses.values())}
+        />
 
         <footer className="mt-10 pt-4 border-t-2 border-slate-800 text-center text-[10px] text-slate-500 leading-relaxed">
           <div className="flex items-center justify-center gap-1.5 mb-1">

@@ -261,6 +261,8 @@ Cumulative work to land a complete per-patent investigation flow, side panel + f
 | 3C | 2026-05-12 | OA analyzer quota model — first 5 fresh analyses per (user, application) are free; subsequent fresh analyses cost 1 credit each; ledger in `oaAnalysisQuota` collection; cache hits and re-analyses of OAs in the ledger always free; quota chip in section header | pending commit |
 | 3D | 2026-05-12 | Examiner Stats § 9 — `/examiner-stats` endpoint pulling from USPTO ODP bibliographic + search endpoints (PatentsView migrated into ODP 2026-03-20). Surfaces examiner name, art unit, total applications, patented count, allowance rate, avg pendency. Auto-loads, free, 30-day cache per application. | pending commit |
 | housekeeping | 2026-05-12 | Removed dead `functions/src/bigquery.ts` (no importers, used pre-removal `@google-cloud/bigquery`); added `feedback_no_bigquery.md` memory and purged BigQuery references from `MEMORY.md` | pending commit |
+| 3E | 2026-05-12 | **IDS generator § 12** — client-side merge of backward citations + OA-cited art, dedupe by normalized patent number; four exporters (PDF filled SB/08 via jspdf-autotable, DOCX via `docx`, CSV, XML with internal IDS schema); lifted `oaAnalyses` Map up to `PatentDossierPage` so § 12 can read merged data; non-US patent banner + no-OAs-analyzed banner; free (bundled with dossier). **Closes Tier 1 ODP scope.** | pending commit |
+| reliability | 2026-05-12 | Google Patents 429/5xx retry-with-backoff in `fetchPatentHtml`; new `rate_limited` error code → HTTP 429 instead of cryptic 502; client shows friendly "Google Patents is throttling us" message + Try Again button | pending commit |
 
 **Dossier sections live in production:**
 
@@ -278,6 +280,7 @@ Cumulative work to land a complete per-patent investigation flow, side panel + f
 | 10 | Prosecution History | Tier 1 #3 (file wrapper) | USPTO ODP file wrapper docs with category filter + per-doc PDF proxy; per-OA "Analyze" button (see § 10A); 7-day cache; auto-loads for US post-2001 patents |
 | 10A | OA Inline Analyzer | Tier 1 #4 | Click-to-expand on any Office Action row; Gemini 2.5 Flash multimodal PDF analysis; 5 free per application then 1 credit; 30-day per-doc cache |
 | 11 | Export & Share | adjacent | Print to PDF + Google Patents link |
+| 12 | Information Disclosure Statement (IDS) | Tier 1 #12 | Auto-formatted SB/08 from backward citations + OA-cited art; PDF/DOCX/CSV/XML exports; free (bundled with dossier); deterministic client-side reformat |
 
 ### Scaffolded but not wired
 
@@ -287,7 +290,7 @@ Cumulative work to land a complete per-patent investigation flow, side panel + f
 
 ### Defined but not started
 
-- **Tier 1 ODP-dependent (remaining)**: IDS generation (auto-format Form SB/08 from family citation network)
+- **Tier 1 ODP-dependent**: ✅ all shipped (file wrapper, OA analyzer, examiner stats, IDS generator)
 - **Tier 2**: FTO analysis (as a side-panel tool) · claim charting · patent landscape · assignment / title verification
 - **Tier 3**: annuity tracking · PCT national phase deadlines · spec↔claim consistency · claim drafting assistant · reference numeral extraction · patent valuation signals
 - **Tier 4**: IPR/PGR prep · Markman support · patent translation · damages support · inventor tracking · lien check
@@ -300,12 +303,12 @@ Per [`ROADMAP.md`](../ROADMAP.md), the workflow agents (Part 5) are notionally g
 
 ### Next up
 
-Top of the queue, in rough priority order. Pick based on appetite for new data sources vs. agent infrastructure.
+**Priority order revised 2026-05-12** — W1 deferred to last after cost analysis (see `memory/research_w1_prior_art_hunter.md`: realistic cost $7–15/run vs. the AGENT_SDK $3.50 estimate). User wants safer features shipped first.
 
-1. **IDS generator** — auto-format USPTO Form SB/08 from the patent's citation network (we already have backward citations from GP and OA-cited art from the analyzer). Closes out Tier 1 ODP scope. ~1–2 days.
-2. **Workflows tab — Prior Art Hunter agent (W1)** — flagship deliverable at $29–99 per run. Claude Agent SDK integration, MCP tool wrappers for Boolean gen + GP search, verification-required output. ~1 week. Highest revenue ceiling; per ROADMAP this is build-first now.
-3. **Tier 2 next-up: claim charting or FTO** — claim charting is a natural extension of the OA Analyzer (we already extract rejections + cited art); FTO requires the live-patent + jurisdiction filter machinery. Both are Workflow-tab candidates.
-4. **Patent landscape (Tier 2 #10)** — CPC clustering + competitor overlay. Probably belongs in the Workflows tab as the W4 deliverable; not a per-patent feature.
+1. ✅ **IDS generator** — shipped 2026-05-12 (Phase 3E). Tier 1 ODP scope closed.
+2. **Tier 2: claim charting or FTO** — claim charting is a natural extension of the OA Analyzer (we already extract rejections + cited art); FTO requires the live-patent + jurisdiction filter machinery. Both are Workflow-tab candidates.
+3. **Patent landscape (Tier 2 #10)** — CPC clustering + competitor overlay. Probably belongs in the Workflows tab as the W4 deliverable; not a per-patent feature.
+4. **Workflows tab — Prior Art Hunter agent (W1)** — DEFERRED to last. Flagship deliverable at $29–99 per run. Claude Agent SDK integration, MCP tool wrappers for Boolean gen + GP search, verification-required output. ~1 week. Pre-launch non-negotiables: prompt caching, per-user concurrent-run cap, daily org-wide spend ceiling, verification step, refund policy.
 
 Pause-the-build polish (do anytime):
 - `/prosecution-history` could include the current OA quota state so the `AI: X/5 free` chip shows immediately on dossier load (today it appears after the first analysis click)

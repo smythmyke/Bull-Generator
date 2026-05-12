@@ -6,7 +6,7 @@
 
 Live Chrome extension (since Nov 2024) — "AI Patent Search Generator." Takes natural language input and generates Boolean queries for patent search systems (USPTO, EPO, Google Patents) with wildcards, synonyms, Porter stemming, field selection, and broad/moderate/narrow modes. React + TypeScript + Firebase + Stripe.
 
-**Status as of 2026-05-12:** Patent Dossier surface is live (side-panel chips + full-tab dossier, now **11 sections** including examiner intelligence and prosecution-history with AI Office Action analysis). USPTO ODP integration is ~75% complete — only IDS generation remains. Workflows-tab agents (W1 Prior Art Hunter) are the next major build.
+**Status as of 2026-05-12:** Patent Dossier surface is live (side-panel chips + full-tab dossier, now **12 sections** including examiner intelligence, prosecution-history with AI Office Action analysis, and IDS generator). USPTO ODP integration is **100% complete** (Tier 1 ODP scope closed). Priority revised 2026-05-12 after W1 cost analysis: next builds are claim charting / FTO → W4 Patent Landscape → W1 Prior Art Hunter last.
 
 **Strategic note:** Of the four products in the portfolio, Bull-Generator has the highest per-transaction price ceiling because patent professionals bill $200–600/hour. If the product has users but low revenue, it's likely a pricing/packaging problem — the current utility model leaves money on the table compared to a workflow model.
 
@@ -53,14 +53,23 @@ Build status mirrored in [patent-firm-features.md Part 5 + Part 6](./research/pa
   - Technology area → top assignees, filing trends, white space analysis
   - Target audience: VCs, R&D teams (different buyer than patent pros)
 
-## Phase 2.5 — USPTO ODP integration (in progress)
+## Phase 2.5 — USPTO ODP integration ✅ complete
 
 Parallel track to the Workflow agents — fills in the prosecution-heavy half of dossier Tier 1.
 
 - [x] **File wrapper viewer** (2026-05-12) — `/prosecution-history` endpoint + server-side PDF proxy `/odp-document` (PDFs require X-API-KEY so direct `<a href>` fails); § 10 Prosecution section with category filter chips + auto-load + 7-day cache
 - [x] **Office Action analyzer** (2026-05-12) — `/oa-analyze` endpoint, Gemini 2.5 Flash multimodal PDF input (handles scanned OAs via native OCR — no separate text extraction); inline-expand panel with rejections / cited art / suggested arguments; 5 free per application then 1 credit
 - [x] **Examiner statistics** (2026-05-12) — `/examiner-stats` endpoint pulling from USPTO ODP bibliographic + search (PatentsView migrated into ODP 2026-03-20); § 9 with examiner name, art unit, total apps, allowance rate, avg pendency
-- [ ] **IDS generation** — auto-format Form SB/08 from family citation network and OA-cited art
+- [x] **IDS generator § 12** (2026-05-12) — client-side merge of backward citations + OA-cited art (dedupe by normalized patent number); four exporters (PDF filled SB/08 via jspdf-autotable, DOCX via `docx`, CSV, XML internal schema); free, bundled with dossier; non-US patent banner; no-Cloud-Function needed
+- [x] **Reliability: Google Patents 429/5xx retry** (2026-05-12) — `fetchPatentHtml` retry-with-backoff (~500ms + 1500ms + jitter); new `rate_limited` error code → HTTP 429 instead of cryptic 502; friendly client error UI with Try Again button
+
+## Phase 2.7 — Tier 2 dossier features + Workflows
+
+Following the 2026-05-12 priority revision (W1 deferred due to per-run cost; see `memory/research_w1_prior_art_hunter.md`):
+
+- [ ] **Claim charting / FTO** (item 2) — natural extension of OA Analyzer; uses already-extracted rejections + cited art. Could land in dossier or Workflows tab.
+- [ ] **W4 Patent Landscape** (item 3) — CPC clustering + competitor overlay; first Workflows-tab agent shipped. Different buyer (VC/R&D) than W1's patent pros.
+- [ ] **W1 Prior Art Hunter** (item 4 — DEFERRED) — see Phase 2 below. Pre-launch non-negotiables: prompt caching, per-user concurrent-run cap, daily org-wide spend ceiling, verification step, refund policy.
 
 ## Phase 3 — Explore Agent SDK for more opportunities
 

@@ -475,26 +475,57 @@ class PatentNotFoundError extends Error {
   }
 }
 
+// Google Patents intermittently returns 429 / 5xx from its edge layer to
+// throttle scraping. These are transient — a short backoff usually clears it.
+class RateLimitedError extends Error {
+  upstreamStatus: number;
+  constructor(patentNumber: string, upstreamStatus: number) {
+    super(`Google Patents throttled the request for ${patentNumber} (HTTP ${upstreamStatus})`);
+    this.name = "RateLimitedError";
+    this.upstreamStatus = upstreamStatus;
+  }
+}
+
+const THROTTLE_STATUSES = new Set([429, 502, 503, 504]);
+const RETRY_DELAYS_MS = [500, 1500];
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function fetchPatentHtml(patentNumber: string): Promise<string> {
   const url = `https://patents.google.com/xhr/result?id=patent/${patentNumber}/en`;
-  const response = await fetch(url, {
-    headers: {
-      "User-Agent": FIXTURE_USER_AGENT,
-      "Accept": "text/html",
-    },
-    signal: AbortSignal.timeout(20000),
-  });
-  if (response.status === 404) {
-    throw new PatentNotFoundError(patentNumber);
+  let lastStatus = 0;
+
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": FIXTURE_USER_AGENT,
+        "Accept": "text/html",
+      },
+      signal: AbortSignal.timeout(20000),
+    });
+    if (response.status === 404) {
+      throw new PatentNotFoundError(patentNumber);
+    }
+    if (response.ok) {
+      const html = await response.text();
+      if (!html || html.length < 500) {
+        throw new Error(`Empty/short response for ${patentNumber}: ${html.length} bytes`);
+      }
+      return html;
+    }
+    lastStatus = response.status;
+    if (!THROTTLE_STATUSES.has(response.status)) {
+      throw new Error(`HTTP ${response.status} fetching ${patentNumber}`);
+    }
+    if (attempt < RETRY_DELAYS_MS.length) {
+      const base = RETRY_DELAYS_MS[attempt];
+      const jitter = Math.floor(Math.random() * 250);
+      await sleep(base + jitter);
+    }
   }
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status} fetching ${patentNumber}`);
-  }
-  const html = await response.text();
-  if (!html || html.length < 500) {
-    throw new Error(`Empty/short response for ${patentNumber}: ${html.length} bytes`);
-  }
-  return html;
+  throw new RateLimitedError(patentNumber, lastStatus);
 }
 
 export function buildDossierFromHtml(
@@ -583,7 +614,7 @@ export interface PatentDossierRequest {
 export interface PatentDossierResult {
   dossier?: PatentDossier;
   error?: string;
-  code?: "invalid_number" | "fetch_failed" | "parse_failed" | "not_found";
+  code?: "invalid_number" | "fetch_failed" | "parse_failed" | "not_found" | "rate_limited";
 }
 
 export async function handlePatentDossierRequest(
@@ -606,6 +637,13 @@ export async function handlePatentDossierRequest(
       return {
         error: `No patent found with number ${normalized}. Check the format (e.g. US10867416B2) or verify it exists on Google Patents.`,
         code: "not_found",
+      };
+    }
+    if (e instanceof RateLimitedError) {
+      console.warn(`[Dossier] Rate-limited after retries for ${normalized}: upstream ${e.upstreamStatus}`);
+      return {
+        error: "Google Patents is throttling us right now. Please try again in 1–2 minutes.",
+        code: "rate_limited",
       };
     }
     const message = e instanceof Error ? e.message : String(e);
@@ -772,7 +810,7 @@ async function writeSummaryCache(
 export interface DossierSummaryResult {
   summary?: DossierSummary;
   error?: string;
-  code?: "invalid_number" | "fetch_failed" | "parse_failed" | "not_found" | "ai_failed";
+  code?: "invalid_number" | "fetch_failed" | "parse_failed" | "not_found" | "ai_failed" | "rate_limited";
 }
 
 export async function handleDossierSummaryRequest(
@@ -800,6 +838,13 @@ export async function handleDossierSummaryRequest(
         return {
           error: `No patent found with number ${normalized}. Check the format (e.g. US10867416B2) or verify it exists on Google Patents.`,
           code: "not_found",
+        };
+      }
+      if (e instanceof RateLimitedError) {
+        console.warn(`[DossierSummary] Rate-limited after retries for ${normalized}: upstream ${e.upstreamStatus}`);
+        return {
+          error: "Google Patents is throttling us right now. Please try again in 1–2 minutes.",
+          code: "rate_limited",
         };
       }
       const message = e instanceof Error ? e.message : String(e);
