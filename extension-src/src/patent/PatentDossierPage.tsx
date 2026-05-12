@@ -3,6 +3,7 @@ import {
   fetchPatentDossier,
   fetchDossierSummary,
   fetchProsecutionHistory,
+  fetchClaimChart,
   downloadOdpDocument,
   analyzeOfficeAction,
   fetchExaminerStats,
@@ -20,10 +21,12 @@ import {
   DossierCpc,
   DossierFamilyMember,
   DossierSummary,
+  ClaimChart,
   ClaimScopeLabel,
 } from '../services/apiService';
 import { useAuthContext } from '../contexts/AuthContext';
 import IdsSection from './IdsSection';
+import ClaimChartSection from './ClaimChartSection';
 import { CheckCircle2, XCircle, Clock, AlertTriangle, ExternalLink, Printer, Sparkles, RefreshCw, Download } from 'lucide-react';
 
 // ── Visual helpers ──────────────────────────────────────────────────────
@@ -95,6 +98,7 @@ const NAV_SECTIONS = [
   { id: 'examiner', label: 'Examiner' },
   { id: 'prosecution', label: 'Prosecution' },
   { id: 'export', label: 'Export' },
+  { id: 'claim-chart', label: 'Chart' },
   { id: 'ids', label: 'IDS' },
 ];
 
@@ -1397,9 +1401,15 @@ const PatentDossierPage: React.FC = () => {
   const [examinerLoading, setExaminerLoading] = useState(false);
   const [examinerError, setExaminerError] = useState<string | null>(null);
 
-  // OA analyses Map is lifted here so § 12 IDS can merge OA-cited art.
-  // Keyed by documentId.
+  // OA analyses Map is lifted here so § 12 Claim Chart and § 13 IDS can
+  // merge OA-cited art. Keyed by documentId.
   const [oaAnalyses, setOaAnalyses] = useState<Map<string, OfficeActionAnalysis>>(new Map());
+
+  // Claim chart state — auto-loads after dossier resolves, then re-runs when
+  // oaAnalyses changes (cache key on the server includes the analyzed-doc set).
+  const [claimChart, setClaimChart] = useState<ClaimChart | null>(null);
+  const [claimChartLoading, setClaimChartLoading] = useState(false);
+  const [claimChartError, setClaimChartError] = useState<string | null>(null);
 
   const [activeId, setActiveId] = useState<string>(NAV_SECTIONS[0].id);
   // Click-driven nav temporarily wins over scroll observer to avoid flicker
@@ -1458,6 +1468,37 @@ const PatentDossierPage: React.FC = () => {
   useEffect(() => {
     document.title = patentNumber ? `${patentNumber} — Patent Dossier` : 'Patent Dossier';
   }, [patentNumber]);
+
+  // Claim chart auto-load: triggers when the dossier first arrives, and again
+  // whenever the user analyzes a new Office Action (so the chart picks up
+  // newly available examiner-cited art). Cache on the server keys on the
+  // analyzed-doc set, so repeats with the same OAs are free.
+  const oaAnalysesKey = useMemo(
+    () => Array.from(oaAnalyses.keys()).sort().join(','),
+    [oaAnalyses],
+  );
+  useEffect(() => {
+    if (!dossier || !dossier.claims.items.length) return;
+    let cancelled = false;
+    setClaimChartLoading(true);
+    setClaimChartError(null);
+    fetchClaimChart({
+      patentNumber: dossier.patentNumber,
+      claims: dossier.claims.items,
+      oaAnalyses: Array.from(oaAnalyses.values()).map((a) => ({
+        documentId: a.documentId,
+        mailDate: a.mailDate,
+        rejections: a.rejections,
+        citedArt: a.citedArt,
+      })),
+    })
+      .then((c) => { if (!cancelled) setClaimChart(c); })
+      .catch((e) => {
+        if (!cancelled) setClaimChartError((e as Error)?.message || 'Failed to generate claim chart');
+      })
+      .finally(() => { if (!cancelled) setClaimChartLoading(false); });
+    return () => { cancelled = true; };
+  }, [dossier, oaAnalysesKey]);
 
   // Scroll-spy: highlight the nav button for whichever section is currently
   // in the trigger band just under the sticky header.
@@ -1693,6 +1734,12 @@ const PatentDossierPage: React.FC = () => {
           setAnalyses={setOaAnalyses}
         />
         <ExportSection dossier={dossier} />
+        <ClaimChartSection
+          chart={claimChart}
+          loading={claimChartLoading}
+          error={claimChartError}
+          analyzedOaCount={oaAnalyses.size}
+        />
         <IdsSection
           dossier={dossier}
           applicationNumber={history?.applicationNumber}

@@ -6,7 +6,7 @@
 
 Live Chrome extension (since Nov 2024) — "AI Patent Search Generator." Takes natural language input and generates Boolean queries for patent search systems (USPTO, EPO, Google Patents) with wildcards, synonyms, Porter stemming, field selection, and broad/moderate/narrow modes. React + TypeScript + Firebase + Stripe.
 
-**Status as of 2026-05-12:** Patent Dossier surface is live (side-panel chips + full-tab dossier, now **12 sections** including examiner intelligence, prosecution-history with AI Office Action analysis, and IDS generator). USPTO ODP integration is **100% complete** (Tier 1 ODP scope closed). Priority revised 2026-05-12 after W1 cost analysis: next builds are claim charting / FTO → W4 Patent Landscape → W1 Prior Art Hunter last.
+**Status as of 2026-05-12:** Patent Dossier surface is live (side-panel chips + full-tab dossier, now **13 sections** including examiner intelligence, prosecution-history with AI Office Action analysis, Claim Chart, and IDS generator). USPTO ODP integration is **100% complete** (Tier 1 ODP scope closed); Tier 2 claim charting also shipped. Priority revised 2026-05-12 after W1 cost analysis: next builds are FTO → W4 Patent Landscape → W1 Prior Art Hunter last.
 
 **Strategic note:** Of the four products in the portfolio, Bull-Generator has the highest per-transaction price ceiling because patent professionals bill $200–600/hour. If the product has users but low revenue, it's likely a pricing/packaging problem — the current utility model leaves money on the table compared to a workflow model.
 
@@ -67,7 +67,8 @@ Parallel track to the Workflow agents — fills in the prosecution-heavy half of
 
 Following the 2026-05-12 priority revision (W1 deferred due to per-run cost; see `memory/research_w1_prior_art_hunter.md`):
 
-- [ ] **Claim charting / FTO** (item 2) — natural extension of OA Analyzer; uses already-extracted rejections + cited art. Could land in dossier or Workflows tab.
+- [x] **Claim Chart § 12** (2026-05-12) — `/claim-chart` endpoint; Gemini 2.5 Flash decomposes independent claims into elements + maps to examiner-cited art from OA Analyzer; per-claim status synthesis; 24h cache keyed by (patentNumber, analyzed-doc-set); auto-loads, re-loads when OA analyses change; free, bundled with dossier
+- [ ] **FTO** (item 2 next) — different input (product description, not patent); could be side-panel tool or W3 agent
 - [ ] **W4 Patent Landscape** (item 3) — CPC clustering + competitor overlay; first Workflows-tab agent shipped. Different buyer (VC/R&D) than W1's patent pros.
 - [ ] **W1 Prior Art Hunter** (item 4 — DEFERRED) — see Phase 2 below. Pre-launch non-negotiables: prompt caching, per-user concurrent-run cap, daily org-wide spend ceiling, verification step, refund policy.
 

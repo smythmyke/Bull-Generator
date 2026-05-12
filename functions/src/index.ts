@@ -7,6 +7,7 @@ import {handleWebhookEvent} from "./stripe";
 import {createEouHandler} from "./eou";
 import {handleAdminRequest} from "./admin";
 import {handlePatentDossierRequest, handleDossierSummaryRequest} from "./patentDossier";
+import {handleClaimChartRequest} from "./claimChart";
 import {handleProsecutionHistoryRequest, handleOdpDocumentRequest} from "./usptoOdp";
 import {handleOfficeActionAnalysisRequest} from "./officeActionAnalyzer";
 import {handleExaminerStatsRequest} from "./examinerStats";
@@ -123,6 +124,23 @@ export const ai = functions.runWith({ timeoutSeconds: 300, memory: "512MB" }).ht
         } else {
           res.status(200).json({data: result.dossier});
         }
+        return;
+      }
+
+      // Claim Chart § 12 — bundled with the 3-credit dossier fetch, free.
+      // Merges dossier claims + OA-cited art into per-claim element chart.
+      if (path === "/claim-chart") {
+        if (!checkRateLimit(decodedToken.uid)) {
+          res.status(429).json({error: "Rate limit exceeded. Try again in an hour."});
+          return;
+        }
+        const result = await handleClaimChartRequest(req.body);
+        if (result.error) {
+          const statusCode = result.code === "invalid_input" ? 400 : 502;
+          res.status(statusCode).json({error: result.error, code: result.code});
+          return;
+        }
+        res.status(200).json({data: result.chart});
         return;
       }
 

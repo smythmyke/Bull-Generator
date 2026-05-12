@@ -55,7 +55,7 @@ const IdsSection: React.FC<IdsSectionProps> = ({
   return (
     <section id="ids" className="mb-8 break-inside-avoid scroll-mt-20">
       <h2 className="text-base font-bold text-slate-800 border-b-2 border-slate-800 pb-1.5 mb-2.5 flex items-center gap-2">
-        <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-800 text-white text-[10px]">12</span>
+        <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-800 text-white text-[10px]">13</span>
         Information Disclosure Statement (IDS)
       </h2>
 

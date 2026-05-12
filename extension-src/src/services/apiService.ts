@@ -499,6 +499,62 @@ export async function fetchDossierSummary(patentNumber: string): Promise<Dossier
   return callAI<DossierSummary>('/dossier-summary', { patentNumber });
 }
 
+// ── Claim Chart § 12 ─────────────────────────────────────────────────────
+
+export type ClaimStatus = 'allowed' | 'rejected' | 'pending' | 'unknown';
+
+export interface ClaimChartReference {
+  patentNumber: string;
+  rejectionStatute: '102' | '103' | '112' | '101' | 'double-patenting' | 'other';
+  examinerReasoning: string;
+  oaDocumentId?: string;
+  oaMailDate?: string;
+}
+
+export interface ClaimChartElement {
+  label: string;
+  text: string;
+  citedReferences: ClaimChartReference[];
+}
+
+export interface ClaimChartItem {
+  claimNumber: number;
+  isIndependent: boolean;
+  dependsOn?: number;
+  elements: ClaimChartElement[];
+  status: ClaimStatus;
+  statusReasoning: string;
+  generationError?: string;
+}
+
+export interface ClaimChart {
+  patentNumber: string;
+  generatedAt: string;
+  cached: boolean;
+  claimCharts: ClaimChartItem[];
+  analyzedOaCount: number;
+}
+
+interface ClaimChartRequest {
+  patentNumber: string;
+  claims: DossierClaim[];
+  oaAnalyses: Array<{
+    documentId: string;
+    mailDate?: string;
+    rejections: Array<{
+      statute: string;
+      claimsAffected: string;
+      citedReferences: string[];
+      reasoning: string;
+    }>;
+    citedArt: Array<{ patentNumber: string; shortName?: string }>;
+  }>;
+}
+
+export async function fetchClaimChart(req: ClaimChartRequest): Promise<ClaimChart> {
+  return callAI<ClaimChart>('/claim-chart', req as unknown as Record<string, unknown>);
+}
+
 // ── USPTO ODP: Prosecution History ───────────────────────────────────────
 
 export type DocumentCategory =
