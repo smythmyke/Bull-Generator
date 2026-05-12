@@ -6,7 +6,7 @@
 
 Live Chrome extension (since Nov 2024) — "AI Patent Search Generator." Takes natural language input and generates Boolean queries for patent search systems (USPTO, EPO, Google Patents) with wildcards, synonyms, Porter stemming, field selection, and broad/moderate/narrow modes. React + TypeScript + Firebase + Stripe.
 
-**Status as of 2026-05-11:** Patent Dossier surface is live (side-panel chips + full-tab 9-section dossier with AI summary). USPTO ODP integration and the Workflows-tab agents are next.
+**Status as of 2026-05-12:** Patent Dossier surface is live (side-panel chips + full-tab dossier, now **11 sections** including examiner intelligence and prosecution-history with AI Office Action analysis). USPTO ODP integration is ~75% complete — only IDS generation remains. Workflows-tab agents (W1 Prior Art Hunter) are the next major build.
 
 **Strategic note:** Of the four products in the portfolio, Bull-Generator has the highest per-transaction price ceiling because patent professionals bill $200–600/hour. If the product has users but low revenue, it's likely a pricing/packaging problem — the current utility model leaves money on the table compared to a workflow model.
 
@@ -53,14 +53,14 @@ Build status mirrored in [patent-firm-features.md Part 5 + Part 6](./research/pa
   - Technology area → top assignees, filing trends, white space analysis
   - Target audience: VCs, R&D teams (different buyer than patent pros)
 
-## Phase 2.5 — USPTO ODP integration (in queue)
+## Phase 2.5 — USPTO ODP integration (in progress)
 
 Parallel track to the Workflow agents — fills in the prosecution-heavy half of dossier Tier 1.
 
-- [ ] File wrapper viewer — render USPTO ODP prosecution history docs inline
-- [ ] Office Action analyzer — Gemini-powered §102/§103 rejection summary + suggested response arguments
-- [ ] Examiner statistics — allowance rate, pendency, RCE rate, interview success (USPTO PatentsView)
-- [ ] IDS generation — auto-format SB/08 from family citation network
+- [x] **File wrapper viewer** (2026-05-12) — `/prosecution-history` endpoint + server-side PDF proxy `/odp-document` (PDFs require X-API-KEY so direct `<a href>` fails); § 10 Prosecution section with category filter chips + auto-load + 7-day cache
+- [x] **Office Action analyzer** (2026-05-12) — `/oa-analyze` endpoint, Gemini 2.5 Flash multimodal PDF input (handles scanned OAs via native OCR — no separate text extraction); inline-expand panel with rejections / cited art / suggested arguments; 5 free per application then 1 credit
+- [x] **Examiner statistics** (2026-05-12) — `/examiner-stats` endpoint pulling from USPTO ODP bibliographic + search (PatentsView migrated into ODP 2026-03-20); § 9 with examiner name, art unit, total apps, allowance rate, avg pendency
+- [ ] **IDS generation** — auto-format Form SB/08 from family citation network and OA-cited art
 
 ## Phase 3 — Explore Agent SDK for more opportunities
 
@@ -79,7 +79,7 @@ Review cadence: after each Phase 2 agent ships, re-read `C:\Projects\ideas\claud
 
 - **Hallucination is existential** — one invented reference destroys trust with patent pros. All outputs require source verification.
 - **Not legal advice** — every Claim Analyzer and FTO output must carry a legal disclaimer. Consult an IP attorney about liability exposure before shipping FTO.
-- **Patent search API costs** — Google Patents public scrape works for MVP but may hit limits. Budget for commercial API (PatSnap, LexisNexis TotalPatent, Google BigQuery patent dataset) at scale.
+- **Patent search API costs** — Google Patents XHR scrape (`patents.google.com/xhr/result?...`) is the canonical free path and what production uses today. USPTO ODP covers the prosecution-data half (free with API key). Commercial APIs (PatSnap, LexisNexis TotalPatent) are a budget consideration if either of those breaks at scale. **BigQuery is excluded** — per `feedback_no_bigquery.md`, prior usage cost $7.44/call due to 1.19 TB scans; never propose it as a fallback.
 
 ## Related docs
 

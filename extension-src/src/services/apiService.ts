@@ -30,6 +30,7 @@ async function callAI<T>(endpoint: string, body: Record<string, unknown>, credit
     const message = errorData?.error || `Request failed: ${response.status}`;
     const err = new Error(message);
     (err as any).status = response.status;
+    if (errorData?.code) (err as any).code = errorData.code;
     throw err;
   }
 
@@ -496,4 +497,235 @@ export interface DossierSummary {
 
 export async function fetchDossierSummary(patentNumber: string): Promise<DossierSummary> {
   return callAI<DossierSummary>('/dossier-summary', { patentNumber });
+}
+
+// ── USPTO ODP: Prosecution History ───────────────────────────────────────
+
+export type DocumentCategory =
+  | 'office-action'
+  | 'response'
+  | 'ids'
+  | 'claim-amendment'
+  | 'notice'
+  | 'filing'
+  | 'other';
+
+export interface FileWrapperDocument {
+  documentId: string;
+  date: string;
+  code: string;
+  description: string;
+  category: DocumentCategory;
+  pdfUrl?: string;
+  pages?: number;
+}
+
+export interface ProsecutionHistory {
+  applicationNumber: string;
+  documentCount: number;
+  documents: FileWrapperDocument[];
+  fetchedAt: string;
+  cached: boolean;
+}
+
+export type ProsecutionHistoryErrorCode =
+  | 'invalid_number'
+  | 'out_of_coverage'
+  | 'not_found'
+  | 'fetch_failed'
+  | 'no_api_key';
+
+export class ProsecutionHistoryError extends Error {
+  code: ProsecutionHistoryErrorCode;
+  constructor(message: string, code: ProsecutionHistoryErrorCode) {
+    super(message);
+    this.name = 'ProsecutionHistoryError';
+    this.code = code;
+  }
+}
+
+// ── Examiner Stats ───────────────────────────────────────────────────────
+
+export interface ExaminerStats {
+  applicationNumber: string;
+  examinerName: string;
+  artUnit: string;
+  patentNumber?: string;
+  totalApplications: number;
+  patentedCount: number;
+  allowanceRate: number;
+  avgPendencyDays: number;
+  pendencySampleSize: number;
+  fetchedAt: string;
+  cached: boolean;
+}
+
+export type ExaminerStatsErrorCode =
+  | 'invalid_input'
+  | 'not_found'
+  | 'fetch_failed'
+  | 'no_api_key'
+  | 'no_examiner';
+
+export class ExaminerStatsError extends Error {
+  code: ExaminerStatsErrorCode;
+  constructor(message: string, code: ExaminerStatsErrorCode) {
+    super(message);
+    this.name = 'ExaminerStatsError';
+    this.code = code;
+  }
+}
+
+export async function fetchExaminerStats(
+  applicationNumber: string,
+): Promise<ExaminerStats> {
+  try {
+    return await callAI<ExaminerStats>('/examiner-stats', { applicationNumber });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : 'Unknown error';
+    const rawCode = (e as { code?: string }).code;
+    const code: ExaminerStatsErrorCode =
+      rawCode === 'invalid_input' ||
+      rawCode === 'not_found' ||
+      rawCode === 'no_api_key' ||
+      rawCode === 'no_examiner' ||
+      rawCode === 'fetch_failed'
+        ? rawCode
+        : 'fetch_failed';
+    throw new ExaminerStatsError(message, code);
+  }
+}
+
+// ── Office Action Analyzer ───────────────────────────────────────────────
+
+export type RejectionStatute =
+  | '102' | '103' | '112' | '101' | 'double-patenting' | 'other';
+
+export interface OaRejection {
+  statute: RejectionStatute;
+  claimsAffected: string;
+  citedReferences: string[];
+  reasoning: string;
+}
+
+export interface OaCitedArt {
+  patentNumber: string;
+  shortName?: string;
+}
+
+export interface OfficeActionAnalysis {
+  applicationNumber: string;
+  documentId: string;
+  examinerName?: string;
+  artUnit?: string;
+  mailDate?: string;
+  summary: string;
+  rejections: OaRejection[];
+  citedArt: OaCitedArt[];
+  suggestedArguments: string;
+  generatedAt: string;
+  cached: boolean;
+}
+
+export type OaAnalysisErrorCode =
+  | 'invalid_input'
+  | 'not_found'
+  | 'fetch_failed'
+  | 'no_api_key'
+  | 'ai_failed';
+
+export class OaAnalysisError extends Error {
+  code: OaAnalysisErrorCode;
+  constructor(message: string, code: OaAnalysisErrorCode) {
+    super(message);
+    this.name = 'OaAnalysisError';
+    this.code = code;
+  }
+}
+
+export interface OaQuotaState {
+  analysesUsed: number;
+  freeQuota: number;
+}
+
+export interface OaAnalysisResponse {
+  analysis: OfficeActionAnalysis;
+  quota: OaQuotaState;
+}
+
+export async function analyzeOfficeAction(
+  applicationNumber: string,
+  documentId: string,
+): Promise<OaAnalysisResponse> {
+  try {
+    return await callAI<OaAnalysisResponse>('/oa-analyze', {
+      applicationNumber,
+      documentId,
+    });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : 'Unknown error';
+    const rawCode = (e as { code?: string }).code;
+    const code: OaAnalysisErrorCode =
+      rawCode === 'invalid_input' ||
+      rawCode === 'not_found' ||
+      rawCode === 'no_api_key' ||
+      rawCode === 'ai_failed' ||
+      rawCode === 'fetch_failed'
+        ? rawCode
+        : 'fetch_failed';
+    throw new OaAnalysisError(message, code);
+  }
+}
+
+/**
+ * Download a USPTO file-wrapper PDF via the server-side proxy (the raw ODP
+ * URL needs the API key, so the browser can't fetch it directly).
+ */
+export async function downloadOdpDocument(
+  applicationNumber: string,
+  documentId: string,
+): Promise<Blob> {
+  const token = await getAuthToken();
+  const response = await fetch(`${AI_BASE_URL}/odp-document`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ applicationNumber, documentId }),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => null);
+    const message = errorData?.error || `Download failed: ${response.status}`;
+    throw new Error(message);
+  }
+  return response.blob();
+}
+
+/**
+ * Fetch the USPTO file wrapper for a given application number.
+ * Throws a `ProsecutionHistoryError` with a typed `code` for the UI to branch on.
+ */
+export async function fetchProsecutionHistory(
+  applicationNumber: string,
+  filingDate?: string,
+): Promise<ProsecutionHistory> {
+  try {
+    return await callAI<ProsecutionHistory>('/prosecution-history', {
+      applicationNumber,
+      ...(filingDate ? { filingDate } : {}),
+    });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : 'Unknown error';
+    const rawCode = (e as { code?: string }).code;
+    const code: ProsecutionHistoryErrorCode =
+      rawCode === 'invalid_number' ||
+      rawCode === 'out_of_coverage' ||
+      rawCode === 'not_found' ||
+      rawCode === 'no_api_key' ||
+      rawCode === 'fetch_failed'
+        ? rawCode
+        : 'fetch_failed';
+    throw new ProsecutionHistoryError(message, code);
+  }
 }

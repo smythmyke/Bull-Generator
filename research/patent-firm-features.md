@@ -254,8 +254,13 @@ Cumulative work to land a complete per-patent investigation flow, side panel + f
 | 2D | 2026-05-11 | `/dossier-summary` Gemini-backed endpoint + § 1 AI Summary section, auto-load, bundled pricing | `5c9d6ef`, `b2c5151` |
 | 2-polish | 2026-05-11 | Sticky brand header (logo + name), scroll-spy quick-nav, Chrome Web Store CTAs (header badge + footer URL), section IDs + smooth scroll | `9f5e9b4` |
 | 2-polish | 2026-05-11 | Auto-detect patent number from active Google Patents tab | `dfab7f6` |
-| 2-polish | 2026-05-11 | Family ID parser fix, large-family jurisdiction chips + 10-row cap with "Show all" toggle, claim Expand-all/Collapse-all, status enum verified on `Expired` | pending commit |
-| 2-polish | 2026-05-11 | Better not-found error path (404 → friendly message instead of 502); side-panel error auto-dismisses after 6s | pending commit |
+| 2-polish | 2026-05-11 | Family ID parser fix, large-family jurisdiction chips + 10-row cap with "Show all" toggle, claim Expand-all/Collapse-all, status enum verified on `Expired` | `de38eda` |
+| 2-polish | 2026-05-11 | Better not-found error path (404 → friendly message instead of 502); side-panel error auto-dismisses after 6s | `de38eda` |
+| 3A | 2026-05-12 | USPTO ODP file wrapper viewer — `/prosecution-history` endpoint, server-side PDF proxy `/odp-document` (PDFs need X-API-KEY), § 10 Prosecution section with category filter chips + auto-load + 7-day cache (schema-versioned) | pending commit |
+| 3B | 2026-05-12 | Office Action analyzer — `/oa-analyze` endpoint, Gemini 2.5 Flash multimodal PDF input (no separate text extraction, handles scanned OAs via native OCR), inline-expand UI with summary / color-coded rejections (§102/103/112) / cited art / suggested arguments | pending commit |
+| 3C | 2026-05-12 | OA analyzer quota model — first 5 fresh analyses per (user, application) are free; subsequent fresh analyses cost 1 credit each; ledger in `oaAnalysisQuota` collection; cache hits and re-analyses of OAs in the ledger always free; quota chip in section header | pending commit |
+| 3D | 2026-05-12 | Examiner Stats § 9 — `/examiner-stats` endpoint pulling from USPTO ODP bibliographic + search endpoints (PatentsView migrated into ODP 2026-03-20). Surfaces examiner name, art unit, total applications, patented count, allowance rate, avg pendency. Auto-loads, free, 30-day cache per application. | pending commit |
+| housekeeping | 2026-05-12 | Removed dead `functions/src/bigquery.ts` (no importers, used pre-removal `@google-cloud/bigquery`); added `feedback_no_bigquery.md` memory and purged BigQuery references from `MEMORY.md` | pending commit |
 
 **Dossier sections live in production:**
 
@@ -269,19 +274,21 @@ Cumulative work to land a complete per-patent investigation flow, side panel + f
 | 6 | Citation Network | Tier 1 #2 | Forward + backward, top 10 each |
 | 7 | Classification | adjacent to Tier 1 | CPC leaf codes + descriptions + primary marker |
 | 8 | Similar Patents | adjacent | GP's similar-documents list, filters out the patent itself |
-| 9 | Export & Share | adjacent | Print to PDF + Google Patents link |
+| 9 | Examiner Stats | Tier 2 examiner intelligence | USPTO ODP bibliographic + search; auto-loads; free; 30-day cache; gracefully degrades for non-US / pre-2001 patents |
+| 10 | Prosecution History | Tier 1 #3 (file wrapper) | USPTO ODP file wrapper docs with category filter + per-doc PDF proxy; per-OA "Analyze" button (see § 10A); 7-day cache; auto-loads for US post-2001 patents |
+| 10A | OA Inline Analyzer | Tier 1 #4 | Click-to-expand on any Office Action row; Gemini 2.5 Flash multimodal PDF analysis; 5 free per application then 1 credit; 30-day per-doc cache |
+| 11 | Export & Share | adjacent | Print to PDF + Google Patents link |
 
 ### Scaffolded but not wired
 
 | Feature | Location | Notes |
 |---|---|---|
 | Workflows tab (4-card grid) | Side-panel `WorkflowsTab.tsx` | Cards visible, disabled, "Coming soon" badge |
-| Patent Dossier ODP sections | `patent.html` § Phase 2 preview | `<details>` placeholders for file wrapper / OAs / examiner stats / IDS gen |
 
 ### Defined but not started
 
-- **Tier 1 ODP-dependent**: file wrapper retrieval · office action analysis · IDS generation
-- **Tier 2**: FTO analysis (as a side-panel tool) · examiner statistics · claim charting · patent landscape · assignment / title verification
+- **Tier 1 ODP-dependent (remaining)**: IDS generation (auto-format Form SB/08 from family citation network)
+- **Tier 2**: FTO analysis (as a side-panel tool) · claim charting · patent landscape · assignment / title verification
 - **Tier 3**: annuity tracking · PCT national phase deadlines · spec↔claim consistency · claim drafting assistant · reference numeral extraction · patent valuation signals
 - **Tier 4**: IPR/PGR prep · Markman support · patent translation · damages support · inventor tracking · lien check
 - **Workflow agents W1–W4** (per [`ROADMAP.md`](../ROADMAP.md) Phase 2): Prior Art Hunter · Claim Analyzer · FTO Agent · Technology Landscape Agent
@@ -293,15 +300,18 @@ Per [`ROADMAP.md`](../ROADMAP.md), the workflow agents (Part 5) are notionally g
 
 ### Next up
 
-Top of the queue, in rough priority order. Pick based on appetite for new data sources vs. polish.
+Top of the queue, in rough priority order. Pick based on appetite for new data sources vs. agent infrastructure.
 
-1. **Tier 1 ODP integration** — file wrapper / Office Action analyzer / examiner stats. New data source (USPTO Open Data Portal API), three new dossier sections, AI-powered OA analysis. ~1 week. Biggest user-visible expansion; unlocks the prosecution-heavy half of Tier 1.
+1. **IDS generator** — auto-format USPTO Form SB/08 from the patent's citation network (we already have backward citations from GP and OA-cited art from the analyzer). Closes out Tier 1 ODP scope. ~1–2 days.
 2. **Workflows tab — Prior Art Hunter agent (W1)** — flagship deliverable at $29–99 per run. Claude Agent SDK integration, MCP tool wrappers for Boolean gen + GP search, verification-required output. ~1 week. Highest revenue ceiling; per ROADMAP this is build-first now.
-3. **Tier 2 inside dossier** — examiner statistics (USPTO PatentsView free API) is the lightest of the Tier 2 features and slots in as a new dossier section. ~2 days.
+3. **Tier 2 next-up: claim charting or FTO** — claim charting is a natural extension of the OA Analyzer (we already extract rejections + cited art); FTO requires the live-patent + jurisdiction filter machinery. Both are Workflow-tab candidates.
 4. **Patent landscape (Tier 2 #10)** — CPC clustering + competitor overlay. Probably belongs in the Workflows tab as the W4 deliverable; not a per-patent feature.
 
 Pause-the-build polish (do anytime):
+- `/prosecution-history` could include the current OA quota state so the `AI: X/5 free` chip shows immediately on dossier load (today it appears after the first analysis click)
+- Surface `directionCategory` (INGOING/OUTGOING) on prosecution rows for at-a-glance examiner-vs-applicant distinction
 - Family ID surfaced in the dossier UI metadata (currently parsed but not rendered)
 - Side-panel error auto-dismiss extended to credit errors (currently only patent-fetch errors auto-dismiss)
 - Family-tree visualization for large families (currently a flat table; would render better as a priority-chain tree)
 - Citation graph viz for the Citation Network section
+- Delete the one-off `functions/debug-odp.js` and `functions/debug-odp-examiner.js` scripts (left in place for future debugging; .env-aware, no hardcoded keys)
