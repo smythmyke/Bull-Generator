@@ -37,3 +37,6 @@ Thumbs.db
 
 # Patent dossier test fixtures (regeneratable via the GP XHR endpoint)
 gp-fixture-*.html
+
+# FTO Phase 0 CLI run outputs (may contain proprietary product descriptions)
+functions/fto-output/
