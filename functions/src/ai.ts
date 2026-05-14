@@ -1,4 +1,5 @@
 import {GoogleGenerativeAI} from "@google/generative-ai";
+import {SCHOLARLY_API_HEADERS} from "./httpHeaders";
 // BigQuery/Google Patents enrichment disabled — import removed
 // Gemini API key updated to Tier 2 (March 2026)
 
@@ -733,7 +734,7 @@ async function lookupSemanticScholar(
     // Try DOI lookup first (exact match)
     if (item.doi) {
       const url = `https://api.semanticscholar.org/graph/v1/paper/DOI:${item.doi}?fields=${SS_FIELDS}`;
-      const res = await fetch(url);
+      const res = await fetch(url, {headers: SCHOLARLY_API_HEADERS});
       if (res.ok) {
         const data = await res.json();
         if (data.abstract) {
@@ -755,7 +756,7 @@ async function lookupSemanticScholar(
     // Fall back to title search
     const encoded = encodeURIComponent(item.title);
     const url = `https://api.semanticscholar.org/graph/v1/paper/search?query=${encoded}&limit=1&fields=${SS_FIELDS}`;
-    const res = await fetch(url);
+    const res = await fetch(url, {headers: SCHOLARLY_API_HEADERS});
     if (res.ok) {
       const data = await res.json();
       if (data.data && data.data.length > 0) {
@@ -789,7 +790,7 @@ async function lookupCrossRef(
     // Try DOI lookup first
     if (item.doi) {
       const url = `https://api.crossref.org/works/${encodeURIComponent(item.doi)}`;
-      const res = await fetch(url);
+      const res = await fetch(url, {headers: SCHOLARLY_API_HEADERS});
       if (res.ok) {
         const data = await res.json();
         const work = data.message;
@@ -814,7 +815,7 @@ async function lookupCrossRef(
     const encoded = encodeURIComponent(item.title);
     const url =
       `https://api.crossref.org/works?query.bibliographic=${encoded}&rows=1`;
-    const res = await fetch(url);
+    const res = await fetch(url, {headers: SCHOLARLY_API_HEADERS});
     if (res.ok) {
       const data = await res.json();
       const items = data.message?.items;
@@ -1119,7 +1120,7 @@ ${conceptsSummary}`,
 
 // ── Extract Concepts ──
 
-const EXTRACT_CONCEPTS_PROMPT = `You are a patent search expert that analyzes paragraphs to extract structured technical concepts for patent searching.
+export const EXTRACT_CONCEPTS_PROMPT = `You are a patent search expert that analyzes paragraphs to extract structured technical concepts for patent searching.
 
 Given a paragraph describing an invention or technology, extract 3-6 distinct technical concepts. Each concept should represent a separate searchable idea.
 
@@ -1162,7 +1163,7 @@ Other rules:
 - Synonyms should be technically accurate alternatives a patent examiner would use
 - Return ONLY valid JSON, no markdown.`;
 
-async function extractConcepts(
+export async function extractConcepts(
   body: { paragraph: string }
 ): Promise<object> {
   const {paragraph} = body;

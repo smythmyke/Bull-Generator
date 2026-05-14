@@ -6,6 +6,8 @@
  * Also extracts patent title and assignee for the UI.
  */
 
+import {GOOGLE_PATENTS_HEADERS} from "./httpHeaders";
+
 export interface PatentClaim {
   claimNumber: number;
   text: string;
@@ -165,10 +167,7 @@ export async function handlePatentFetch(
   const url = `https://patents.google.com/xhr/result?id=patent/${patentId}/en`;
 
   const response = await fetch(url, {
-    headers: {
-      "User-Agent": "Mozilla/5.0 (compatible; PatentSearchBot/1.0)",
-      "Accept": "text/html",
-    },
+    headers: GOOGLE_PATENTS_HEADERS,
     signal: AbortSignal.timeout(15000),
   });
 
@@ -180,10 +179,7 @@ export async function handlePatentFetch(
       const altResponse = await fetch(
         `https://patents.google.com/xhr/result?id=patent/${altId}/en`,
         {
-          headers: {
-            "User-Agent": "Mozilla/5.0 (compatible; PatentSearchBot/1.0)",
-            "Accept": "text/html",
-          },
+          headers: GOOGLE_PATENTS_HEADERS,
           signal: AbortSignal.timeout(15000),
         }
       );

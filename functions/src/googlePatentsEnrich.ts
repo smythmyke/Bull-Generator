@@ -9,6 +9,8 @@
  * CPC codes, family data, dates, and more.
  */
 
+import {GOOGLE_PATENTS_HEADERS} from "./httpHeaders";
+
 // ── Types (same interface as bigquery.ts for drop-in replacement) ──
 
 interface ParsedClaim {
@@ -227,10 +229,7 @@ async function fetchAndParsePatent(
   const url = `https://patents.google.com/xhr/result?id=patent/${patentId}/en`;
 
   const response = await fetch(url, {
-    headers: {
-      "User-Agent": "Mozilla/5.0 (compatible; PatentSearchBot/1.0)",
-      "Accept": "text/html",
-    },
+    headers: GOOGLE_PATENTS_HEADERS,
     signal: AbortSignal.timeout(15000),
   });
 

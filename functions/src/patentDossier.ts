@@ -22,6 +22,7 @@ import {
   extractFirstItemprop,
   extractDatetimeItemprop,
 } from "./googlePatentsEnrich";
+import {GOOGLE_PATENTS_HEADERS} from "./httpHeaders";
 
 // ── Types (mirror research/patent-dossier-spec.md §1–§7) ──
 
@@ -153,9 +154,6 @@ export function normalizePatentNumber(input: string): string {
 }
 
 // ── Section parsers ──
-
-const FIXTURE_USER_AGENT =
-  "Mozilla/5.0 (compatible; PatentSearchBot/1.0)";
 
 const ENTITY_DECODE_PAIRS: [RegExp, string][] = [
   [/&amp;/g, "&"],
@@ -499,10 +497,7 @@ async function fetchPatentHtml(patentNumber: string): Promise<string> {
 
   for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
     const response = await fetch(url, {
-      headers: {
-        "User-Agent": FIXTURE_USER_AGENT,
-        "Accept": "text/html",
-      },
+      headers: GOOGLE_PATENTS_HEADERS,
       signal: AbortSignal.timeout(20000),
     });
     if (response.status === 404) {
@@ -682,7 +677,7 @@ const SUMMARY_SYSTEM_PROMPT = `You are a patent analyst writing executive-grade 
 Given a patent's title, abstract, independent claims, and CPC classifications, produce a STRICT JSON response matching exactly this schema:
 
 {
-  "executiveOverview": "string — 2 to 3 paragraphs of plain-English prose. First paragraph: what the invention is, in everyday terms, naming the technical problem it solves. Second paragraph: how it works mechanically (one level deeper than the abstract). Optional third paragraph: practical scope — what kinds of products or systems this likely reads on. Avoid legal jargon. Avoid 'this patent claims' boilerplate. Write declaratively.",
+  "executiveOverview": "string — 2 to 3 paragraphs of plain-English prose, 200 words MAXIMUM total across all paragraphs. First paragraph: what the invention is, in everyday terms, naming the technical problem it solves. Second paragraph: how it works mechanically (one level deeper than the abstract). Optional third paragraph: practical scope — what kinds of products or systems this likely reads on. Avoid legal jargon. Avoid 'this patent claims' boilerplate. Write declaratively.",
   "claimScope": {
     "label": "narrow | moderate | broad",
     "rationale": "string — one or two sentences explaining the call. Reference specific limitations in the independent claims that narrowed or broadened the scope."
@@ -691,6 +686,7 @@ Given a patent's title, abstract, independent claims, and CPC classifications, p
 
 Rules:
 - Return ONLY the JSON object. No markdown. No prose before or after.
+- HARD LIMIT: executiveOverview must be 200 words or fewer. Be concise; cut detail before exceeding the cap.
 - "narrow" = claim limited by multiple specific structural / numeric / configurational features that pin it to one implementation.
 - "moderate" = claim has clear functional limitations but covers a recognizable family of implementations.
 - "broad" = claim covers the core function with few structural constraints (rare for granted utility patents post-Alice).
@@ -741,25 +737,32 @@ async function generateSummary(dossier: PatentDossier): Promise<DossierSummary> 
   }
   const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({model: "gemini-2.5-flash"});
+  const promptText = SUMMARY_SYSTEM_PROMPT + "\n\n" + buildSummaryPrompt(dossier);
 
-  const result = await model.generateContent({
-    contents: [{
-      role: "user",
-      parts: [{text: SUMMARY_SYSTEM_PROMPT + "\n\n" + buildSummaryPrompt(dossier)}],
-    }],
-    generationConfig: {
-      temperature: 0.4,
-      maxOutputTokens: 2048,
-      responseMimeType: "application/json",
-    },
-  });
+  const callGemini = async (maxOutputTokens: number): Promise<string> => {
+    const result = await model.generateContent({
+      contents: [{role: "user", parts: [{text: promptText}]}],
+      generationConfig: {
+        temperature: 0.4,
+        maxOutputTokens,
+        responseMimeType: "application/json",
+      },
+    });
+    return result.response.text();
+  };
 
-  const text = result.response.text();
+  let text = await callGemini(2048);
   let parsed: DossierSummaryAiResponse;
   try {
     parsed = JSON.parse(text);
   } catch (e) {
-    throw new Error(`AI summary returned non-JSON: ${text.slice(0, 200)}`);
+    console.warn(`[DossierSummary] JSON parse failed at 2048 tokens for ${dossier.patentNumber}, retrying at 6144. Preview: ${text.slice(0, 120)}`);
+    text = await callGemini(6144);
+    try {
+      parsed = JSON.parse(text);
+    } catch (e2) {
+      throw new Error(`AI summary returned non-JSON: ${text.slice(0, 200)}`);
+    }
   }
 
   if (!parsed.executiveOverview || !parsed.claimScope) {
