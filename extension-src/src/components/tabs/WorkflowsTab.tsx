@@ -1,6 +1,5 @@
 import React from 'react';
-import { Button } from '../ui/button';
-import { Workflow, Search, FileCheck, Shield, BarChart3, ExternalLink } from 'lucide-react';
+import { Workflow, Search, FileCheck, Shield, BarChart3, Clock } from 'lucide-react';
 
 interface WorkflowCard {
   id: string;
@@ -53,7 +52,7 @@ const WorkflowsTab: React.FC = () => {
           </span>
         </div>
         <p className="mt-1 text-muted-foreground">
-          One-shot deliverables for patent professionals. Each run opens a full-tab report.
+          One-shot deliverables for patent professionals. Each agent will open a full-tab report when launched. Workflows arrive in a future release.
         </p>
       </div>
 
@@ -61,25 +60,22 @@ const WorkflowsTab: React.FC = () => {
         {WORKFLOWS.map((wf) => (
           <div
             key={wf.id}
-            className="rounded-lg border bg-card px-3 py-2 transition-colors"
+            className="rounded-lg border bg-card px-3 py-2 opacity-75"
           >
             <div className="flex items-center gap-1.5 text-xs font-medium">
               {wf.icon}
               {wf.name}
-              <span className="ml-auto text-[10px] text-muted-foreground">{wf.credits}</span>
+              <span className="ml-auto inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-1.5 py-[1px] text-[9px] uppercase tracking-wide text-amber-700">
+                <Clock className="h-2.5 w-2.5" />
+                Coming soon
+              </span>
             </div>
             <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
               {wf.description}
             </p>
-            <Button
-              disabled
-              variant="outline"
-              size="sm"
-              className="mt-1.5 h-6 text-[11px] px-2"
-            >
-              <ExternalLink className="mr-1 h-2.5 w-2.5" />
-              Start
-            </Button>
+            <p className="mt-1.5 text-[10px] text-muted-foreground/80">
+              Planned cost: {wf.credits}
+            </p>
           </div>
         ))}
       </div>
