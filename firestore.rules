@@ -15,6 +15,24 @@ service cloud.firestore {
       }
     }
 
+    // API keys: read/write only via Admin SDK (Cloud Functions).
+    // Users list/create/revoke via the /v1/keys/* endpoints, never direct Firestore.
+    match /apiKeys/{keyId} {
+      allow read, write: if false;
+    }
+
+    // Rate limit windows: Admin SDK only. Configure a TTL policy on the
+    // `expiresAt` field in the Firebase console to auto-delete expired docs.
+    match /rateLimitWindows/{windowId} {
+      allow read, write: if false;
+    }
+
+    // Per-key usage telemetry: Admin SDK only. Surfaced to users via the
+    // extension Admin tab (Day 2 of PLAN-PUBLIC-API).
+    match /apiUsage/{uid}/{rest=**} {
+      allow read, write: if false;
+    }
+
     // EOU Projects: users can read/write their own projects
     match /eouProjects/{projectId} {
       allow read: if request.auth != null &&

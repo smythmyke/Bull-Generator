@@ -1,0 +1,29 @@
+# Smithery configuration — https://smithery.ai/docs/build/project-config/smithery.yaml
+#
+# patent-search-mcp-server is a stdio server distributed via npm. Smithery launches it
+# via `npx -y patent-search-mcp-server` and passes the user's API key as an env var.
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    required:
+      - patentSearchApiKey
+    properties:
+      patentSearchApiKey:
+        type: string
+        title: Patent Search API Key
+        description: API key minted from the AI Patent Search Generator Chrome extension's Admin tab. Format psg_live_... or psg_test_...
+      patentSearchApiBase:
+        type: string
+        title: API Base URL (optional)
+        description: Override the API base. Default https://us-central1-solicitation-matcher-extension.cloudfunctions.net/ai/v1
+        default: https://us-central1-solicitation-matcher-extension.cloudfunctions.net/ai/v1
+  commandFunction: |-
+    (config) => ({
+      command: 'npx',
+      args: ['-y', 'patent-search-mcp-server'],
+      env: {
+        PATENT_SEARCH_API_KEY: config.patentSearchApiKey,
+        ...(config.patentSearchApiBase ? { PATENT_SEARCH_API_BASE: config.patentSearchApiBase } : {})
+      }
+    })

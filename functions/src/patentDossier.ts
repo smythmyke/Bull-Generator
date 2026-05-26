@@ -668,6 +668,93 @@ export async function handlePatentDossierRequest(
   return { dossier };
 }
 
+// ── Targeted-slice handlers (v1.0 free endpoints) ──
+// These return narrow slices of the dossier (similar, citations, family) without
+// the full payload. They reuse handlePatentDossierRequest so they share the
+// 24h dossier cache; pricing-side credit-deduction is decided in the dispatcher.
+
+export interface SimilarResult {
+  patentNumber?: string;
+  similar?: DossierSimilar[];
+  cached?: boolean;
+  error?: string;
+  code?: "invalid_number" | "fetch_failed" | "parse_failed" | "not_found" | "rate_limited";
+}
+
+export async function handleSimilarRequest(
+  body: { patentNumber?: string; limit?: number }
+): Promise<SimilarResult> {
+  const result = await handlePatentDossierRequest({ patentNumber: body.patentNumber });
+  if (result.error) return { error: result.error, code: result.code };
+  const dossier = result.dossier!;
+  const limit = typeof body.limit === "number" && body.limit > 0 ? Math.floor(body.limit) : 20;
+  return {
+    patentNumber: dossier.patentNumber,
+    similar: dossier.similar.slice(0, limit),
+    cached: dossier.cached,
+  };
+}
+
+export interface CitationsResult {
+  patentNumber?: string;
+  direction?: "backward" | "forward" | "both";
+  backwardCount?: number;
+  forwardCount?: number;
+  backward?: DossierCitation[];
+  forward?: DossierCitation[];
+  cached?: boolean;
+  error?: string;
+  code?: "invalid_number" | "fetch_failed" | "parse_failed" | "not_found" | "rate_limited" | "invalid_input";
+}
+
+export async function handleCitationsRequest(
+  body: { patentNumber?: string; direction?: string }
+): Promise<CitationsResult> {
+  const dir = body.direction === "backward" || body.direction === "forward" || body.direction === "both"
+    ? body.direction
+    : "both";
+
+  const result = await handlePatentDossierRequest({ patentNumber: body.patentNumber });
+  if (result.error) return { error: result.error, code: result.code };
+  const dossier = result.dossier!;
+
+  const out: CitationsResult = {
+    patentNumber: dossier.patentNumber,
+    direction: dir,
+    cached: dossier.cached,
+  };
+  if (dir === "backward" || dir === "both") {
+    out.backward = dossier.citations.backward;
+    out.backwardCount = dossier.citations.backwardCount;
+  }
+  if (dir === "forward" || dir === "both") {
+    out.forward = dossier.citations.forward;
+    out.forwardCount = dossier.citations.forwardCount;
+  }
+  return out;
+}
+
+export interface FamilyResult {
+  patentNumber?: string;
+  family?: DossierFamily;
+  cached?: boolean;
+  error?: string;
+  code?: "invalid_number" | "fetch_failed" | "parse_failed" | "not_found" | "rate_limited";
+}
+
+export async function handleFamilyRequest(
+  body: { patentNumber?: string }
+): Promise<FamilyResult> {
+  const result = await handlePatentDossierRequest({ patentNumber: body.patentNumber });
+  if (result.error) return { error: result.error, code: result.code };
+  const dossier = result.dossier!;
+  return {
+    patentNumber: dossier.patentNumber,
+    family: dossier.family,
+    cached: dossier.cached,
+  };
+}
+
 // ── AI summary ──────────────────────────────────────────────────────────
 
 const SUMMARY_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days — summary is deterministic per dossier
