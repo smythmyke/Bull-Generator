@@ -40,3 +40,7 @@ gp-fixture-*.html
 
 # FTO Phase 0 CLI run outputs (may contain proprietary product descriptions)
 functions/fto-output/
+
+# Sibling repo — patent-search-mcp-server is published separately at
+# github.com/smythmyke/patent-search-mcp-server. Lives here for dev convenience.
+mcp-server/
