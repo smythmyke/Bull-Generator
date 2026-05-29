@@ -5,15 +5,16 @@ import {handleAIRequest} from "./ai";
 import {handleCreditRequest, useCredit, FREE_ENDPOINTS} from "./credits";
 import {handleWebhookEvent} from "./stripe";
 import {createEouHandler} from "./eou";
-import {handleAdminRequest} from "./admin";
+import {handleAdminRequest, ADMIN_UID} from "./admin";
 import {
   handlePatentDossierRequest,
   handleDossierSummaryRequest,
   handleSimilarRequest,
   handleCitationsRequest,
   handleFamilyRequest,
+  handleClaimsRequest,
 } from "./patentDossier";
-import {handleClaimChartRequest} from "./claimChart";
+import {handleClaimChartRequest, handleStandaloneClaimChartRequest} from "./claimChart";
 import {handleProsecutionHistoryRequest, handleOdpDocumentRequest} from "./usptoOdp";
 import {handleOfficeActionAnalysisRequest} from "./officeActionAnalyzer";
 import {handleExaminerStatsRequest} from "./examinerStats";
@@ -22,10 +23,15 @@ import {
   resolveAuth,
   asDecodedIdToken,
   hasScope,
+  resolvePlatformSource,
 } from "./auth";
 import {handleKeysRequest} from "./keys";
 import {checkApiKeyRateLimit, logApiUsage} from "./apiRateLimit";
 import {handleCpcRequest} from "./cpc";
+import {handleCpcSuggestRequest} from "./cpcSuggest";
+import {handleSlackCommand} from "./slack/command";
+import {handleSlackEvent} from "./slack/events";
+import {beginInstall, completeInstall} from "./slack/install";
 import {handleSearchExecuteRequest, handleSearchQueryRequest} from "./searchExecute";
 
 const DOSSIER_CREDIT_COST = 3;
@@ -107,7 +113,9 @@ function scopeForPath(path: string): string | null {
   if (path === "/similar") return "dossier";
   if (path === "/citations") return "dossier";
   if (path === "/family") return "dossier";
+  if (path === "/claims") return "dossier";
   if (path === "/cpc") return "dossier";
+  if (path === "/cpc-suggest") return "dossier";
   if (path === "/search-execute" || path === "/search-query") return "search";
   if (path === "/prosecution-history") return "prosecution";
   if (path === "/examiner-stats") return "prosecution";
@@ -129,7 +137,14 @@ function sendRateLimit(
 }
 
 // AI proxy endpoints
-export const ai = functions.runWith({ timeoutSeconds: 300, memory: "512MB" }).https.onRequest((req, res) => {
+export const ai = functions
+  .runWith({
+    timeoutSeconds: 300,
+    memory: "512MB",
+    // Header-auth shortcut for /admin/* — see early-return below.
+    secrets: ["ADMIN_API_KEY"],
+  })
+  .https.onRequest((req, res) => {
   corsHandler(req, res, async () => {
     if (req.method === "OPTIONS") {
       res.status(204).send("");
@@ -141,12 +156,52 @@ export const ai = functions.runWith({ timeoutSeconds: 300, memory: "512MB" }).ht
       return;
     }
 
+    // Header-auth shortcut for /admin/* — lets external pollers (e.g. the
+    // sellers-dashboard sidecar) hit admin endpoints without a Firebase
+    // password login. Falls through to the standard Firebase-token flow
+    // below if the header is missing or doesn't match, so the admin web
+    // UI is unaffected.
+    const earlyPath = normalizePath(req.path);
+    if (earlyPath.startsWith("/admin/")) {
+      const provided = (req.headers["x-admin-key"] as string | undefined) || "";
+      const expected = process.env.ADMIN_API_KEY || "";
+      if (expected && provided && provided === expected) {
+        const syntheticToken = { uid: ADMIN_UID } as admin.auth.DecodedIdToken;
+        try {
+          const result = await handleAdminRequest(earlyPath, req.body, syntheticToken);
+          res.status(200).json({ data: result });
+        } catch (err) {
+          if (err instanceof functions.https.HttpsError) {
+            res.status(err.httpErrorCode.status).json({ error: err.message });
+          } else {
+            throw err;
+          }
+        }
+        return;
+      }
+    }
+
     let ctx: AuthContext | null = null;
 
     try {
       ctx = await resolveAuth(req);
       const decodedToken = asDecodedIdToken(ctx);
       const path = normalizePath(req.path);
+
+      // Server-authoritative platform attribution: classify the request as
+      // extension / website / mcp / api from auth context + User-Agent.
+      // Overwrite any client-supplied body.source so downstream handlers
+      // (handleCreditRequest's /credits/init, /credits/use, /credits/checkout)
+      // pick up the trustworthy value automatically. Also passed explicitly
+      // into useCredit() calls below for usage attribution.
+      const platformSource = resolvePlatformSource(
+        ctx,
+        req,
+        (req.body as { source?: unknown })?.source
+      );
+      if (req.body && typeof req.body === "object") {
+        (req.body as { source: string }).source = platformSource;
+      }
 
       // Scope check (no-op for Firebase token which holds "*")
       const requiredScope = scopeForPath(path);
@@ -202,7 +257,8 @@ export const ai = functions.runWith({ timeoutSeconds: 300, memory: "512MB" }).ht
             db,
             ctx.uid,
             `dossier:${result.dossier.patentNumber}`,
-            DOSSIER_CREDIT_COST
+            DOSSIER_CREDIT_COST,
+            platformSource
           );
           res.status(200).json({data: result.dossier, credits: deductResult});
           await logApiUsageIfKey(ctx, { creditsUsed: DOSSIER_CREDIT_COST });
@@ -213,11 +269,46 @@ export const ai = functions.runWith({ timeoutSeconds: 300, memory: "512MB" }).ht
         return;
       }
 
-      // Claim Chart § 12 — bundled with the 3-credit dossier fetch, free.
-      // Merges dossier claims + OA-cited art into per-claim element chart.
+      // Claim Chart § 12 — two call shapes:
+      //   1. Extension path: caller passes {patentNumber, claims, oaAnalyses}.
+      //      Free (the caller already paid for the dossier + OA analyses).
+      //   2. Standalone path (MCP `claim_chart` tool): caller passes just
+      //      {patentNumber, oaDocumentIds?}. We fetch the dossier internally;
+      //      if the dossier was a cold miss we bill 3cr (same as `dossier`).
       if (path === "/claim-chart") {
+        const db = admin.firestore();
         const rl = await checkRateLimitFor(ctx);
         if (rl) { sendRateLimit(res, rl.retryAfterSeconds); return; }
+        const isStandalone = !Array.isArray((req.body as { claims?: unknown })?.claims) ||
+          ((req.body as { claims?: unknown[] }).claims?.length ?? 0) === 0;
+        if (isStandalone) {
+          const result = await handleStandaloneClaimChartRequest(req.body);
+          if (result.error) {
+            const statusCode = result.code === "invalid_input" ? 400 :
+              result.code === "not_found" ? 404 :
+              result.code === "rate_limited" ? 429 : 502;
+            res.status(statusCode).json({error: result.error, code: result.code});
+            await logApiUsageIfKey(ctx, { isError: true });
+            return;
+          }
+          // Cold dossier fetch → bill 3cr (matches `dossier` endpoint pricing).
+          if (result.dossierCacheHit === false) {
+            const deductResult = await useCredit(
+              db,
+              ctx.uid,
+              `claim-chart:${result.chart!.patentNumber}`,
+              DOSSIER_CREDIT_COST,
+              platformSource
+            );
+            res.status(200).json({data: result.chart, credits: deductResult});
+            await logApiUsageIfKey(ctx, { creditsUsed: DOSSIER_CREDIT_COST });
+          } else {
+            res.status(200).json({data: result.chart});
+            await logApiUsageIfKey(ctx);
+          }
+          return;
+        }
+        // Extension path
         const result = await handleClaimChartRequest(req.body);
         if (result.error) {
           const statusCode = result.code === "invalid_input" ? 400 : 502;
@@ -305,6 +396,40 @@ export const ai = functions.runWith({ timeoutSeconds: 300, memory: "512MB" }).ht
         return;
       }
 
+      // Claims-only slice — lighter than full dossier for LLM token budgets.
+      // Free when the dossier is cached; cold miss costs 1cr (covers the
+      // Google Patents fetch, no AI work).
+      if (path === "/claims") {
+        const db = admin.firestore();
+        const rl = await checkRateLimitFor(ctx);
+        if (rl) { sendRateLimit(res, rl.retryAfterSeconds); return; }
+        const result = await handleClaimsRequest(req.body);
+        if (result.error) {
+          const statusCode = result.code === "invalid_number" ? 400 :
+            result.code === "not_found" ? 404 :
+            result.code === "rate_limited" ? 429 : 502;
+          res.status(statusCode).json({error: result.error, code: result.code});
+          await logApiUsageIfKey(ctx, { isError: true });
+          return;
+        }
+        const payload = { patentNumber: result.patentNumber, claims: result.claims, cached: result.cached };
+        if (result.cached === false) {
+          const deductResult = await useCredit(
+            db,
+            ctx.uid,
+            `claims:${result.patentNumber}`,
+            1,
+            platformSource
+          );
+          res.status(200).json({data: payload, credits: deductResult});
+          await logApiUsageIfKey(ctx, { creditsUsed: 1 });
+        } else {
+          res.status(200).json({data: payload});
+          await logApiUsageIfKey(ctx);
+        }
+        return;
+      }
+
       // Patent search — `mode: "execute"` runs the search against Google
       // Patents server-side and returns ranked hits; `mode: "optimize"`
       // returns just the optimized Boolean query string for manual paste.
@@ -326,14 +451,14 @@ export const ai = functions.runWith({ timeoutSeconds: 300, memory: "512MB" }).ht
           return;
         }
         // 1 credit for either mode
-        const deductResult = await useCredit(db, ctx.uid, `search:${isExecute ? "execute" : "query"}`, 1);
+        const deductResult = await useCredit(db, ctx.uid, `search:${isExecute ? "execute" : "query"}`, 1, platformSource);
         res.status(200).json({data: result, credits: deductResult});
         await logApiUsageIfKey(ctx, { creditsUsed: 1 });
         return;
       }
 
       // CPC classification lookup. Free. v1.0 uses curated static dataset;
-      // full USPTO scheme planned for v1.1.
+      // full USPTO scheme planned for v1.2.
       if (path === "/cpc") {
         const rl = await checkRateLimitFor(ctx);
         if (rl) { sendRateLimit(res, rl.retryAfterSeconds); return; }
@@ -345,6 +470,44 @@ export const ai = functions.runWith({ timeoutSeconds: 300, memory: "512MB" }).ht
         }
         res.status(200).json({data: result});
         await logApiUsageIfKey(ctx);
+        return;
+      }
+
+      // CPC reverse lookup — description → suggested codes via Gemini.
+      // 1 credit; cached by description hash for 30 days so repeated calls
+      // on the same description are charged only once per cache window.
+      if (path === "/cpc-suggest") {
+        const db = admin.firestore();
+        const rl = await checkRateLimitFor(ctx);
+        if (rl) { sendRateLimit(res, rl.retryAfterSeconds); return; }
+        const result = await handleCpcSuggestRequest(req.body);
+        if (result.error) {
+          const statusCode = result.code === "invalid_input" ? 400 :
+            result.code === "no_api_key" ? 503 : 502;
+          res.status(statusCode).json({error: result.error, code: result.code});
+          await logApiUsageIfKey(ctx, { isError: true });
+          return;
+        }
+        const payload = {
+          description: result.description,
+          suggestions: result.suggestions,
+          cached: result.cached,
+          notes: result.notes,
+        };
+        if (result.cached === false) {
+          const deductResult = await useCredit(
+            db,
+            ctx.uid,
+            "cpc-suggest",
+            1,
+            platformSource
+          );
+          res.status(200).json({data: payload, credits: deductResult});
+          await logApiUsageIfKey(ctx, { creditsUsed: 1 });
+        } else {
+          res.status(200).json({data: payload});
+          await logApiUsageIfKey(ctx);
+        }
         return;
       }
 
@@ -393,7 +556,8 @@ export const ai = functions.runWith({ timeoutSeconds: 300, memory: "512MB" }).ht
             db,
             ctx.uid,
             `oa:${result.analysis!.documentId}`,
-            OA_ANALYSIS_CREDIT_COST
+            OA_ANALYSIS_CREDIT_COST,
+            platformSource
           );
           res.status(200).json({data: payload, credits: deductResult});
           await logApiUsageIfKey(ctx, { creditsUsed: OA_ANALYSIS_CREDIT_COST });
@@ -461,7 +625,7 @@ export const ai = functions.runWith({ timeoutSeconds: 300, memory: "512MB" }).ht
         // Rate limit only paid operations
         const rl = await checkRateLimitFor(ctx);
         if (rl) { sendRateLimit(res, rl.retryAfterSeconds); return; }
-        const deductResult = await useCredit(db, ctx.uid, `ai:${path}`, creditCost);
+        const deductResult = await useCredit(db, ctx.uid, `ai:${path}`, creditCost, platformSource);
         const result = await handleAIRequest(path, req.body);
         res.status(200).json({data: result, credits: deductResult});
         await logApiUsageIfKey(ctx, { creditsUsed: creditCost });
@@ -558,3 +722,83 @@ export const eou = functions.https.onRequest((req, res) => {
     }
   });
 });
+
+// Slack bot endpoint — routes:
+//   POST /command           → slash command dispatcher (14 commands, signature-verified)
+//   GET  /install/callback  → Slack OAuth redirect (mints workspace API key)
+//   POST /install/begin     → Firebase-auth'd: returns OAuth URL for the install dance
+export const slackBot = functions
+  .runWith({
+    timeoutSeconds: 60,
+    memory: "512MB",
+    secrets: ["SLACK_CLIENT_ID", "SLACK_CLIENT_SECRET", "SLACK_SIGNING_SECRET"],
+  })
+  .https.onRequest(async (req, res) => {
+    try {
+      // Slash command webhook (Slack POSTs form-urlencoded with signature).
+      if (req.method === "POST" && req.path === "/command") {
+        await handleSlackCommand(req, res);
+        return;
+      }
+
+      // Events API webhook — currently subscribed to `app_uninstalled` only.
+      // Also handles Slack's url_verification challenge during initial setup.
+      if (req.method === "POST" && req.path === "/events") {
+        await handleSlackEvent(req, res);
+        return;
+      }
+
+      // OAuth redirect callback (Slack GETs with ?code=&state=).
+      if (req.method === "GET" && req.path === "/install/callback") {
+        const code = typeof req.query.code === "string" ? req.query.code : "";
+        const state = typeof req.query.state === "string" ? req.query.state : "";
+        if (!code || !state) {
+          res.status(400).send("Missing code or state");
+          return;
+        }
+        const result = await completeInstall(code, state);
+        res.status(200).send(
+          `<html><body style="font-family:sans-serif;max-width:600px;margin:40px auto;padding:0 20px">` +
+          `<h2>✅ AI Patent Search Generator installed</h2>` +
+          `<p>Workspace: <strong>${escapeHtml(result.teamName)}</strong></p>` +
+          `<p>You can close this tab and try a slash command in Slack:</p>` +
+          `<pre>/dossier US10867416B2</pre>` +
+          `</body></html>`
+        );
+        return;
+      }
+
+      // Firebase-auth'd install initiator. Used by the extension's Admin tab
+      // (or the local mint-install-url script) to get an OAuth URL for a uid.
+      if (req.method === "POST" && req.path === "/install/begin") {
+        const ctx = await resolveAuth(req);
+        const decoded = asDecodedIdToken(ctx);
+        const result = await beginInstall(decoded.uid);
+        res.status(200).json({data: result});
+        return;
+      }
+
+      res.status(404).send("Not found");
+    } catch (error) {
+      if (error instanceof functions.https.HttpsError) {
+        const statusCode = error.code === "unauthenticated" ? 401 :
+          error.code === "invalid-argument" ? 400 :
+          error.code === "permission-denied" ? 403 :
+          error.code === "failed-precondition" ? 412 : 500;
+        res.status(statusCode).send(error.message);
+        return;
+      }
+      console.error("[slackBot] error", error);
+      const message = error instanceof Error ? error.message : "Unknown error";
+      res.status(500).send(message);
+    }
+  });
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) =>
+    c === "&" ? "&amp;" :
+    c === "<" ? "&lt;" :
+    c === ">" ? "&gt;" :
+    c === "\"" ? "&quot;" : "&#39;"
+  );
+}
