@@ -79,10 +79,11 @@ Tab name in the sidebar is **Gateway** (under the API project, not the top "Secu
 The page ships with default objects (Requests, Rapid-free-plans-hard-limit, Bandwidth Platform Fee) and 4 plan templates (BASIC/PRO/ULTRA/MEGA, all toggled off). You must ADD the `Credits` object.
 
 1. **+ Add Object → name EXACTLY `Credits`** (must match the `X-RapidAPI-Billing: Credits=` header, or metering silently does nothing). **Associated Endpoints = All endpoints** (the backend emits a Credits header on every endpoint, 0 for free ones — so don't narrow it).
-2. Toggle ON BASIC + ≥1 paid plan (turn MEGA off). **Edit** each → set its `Credits` quota + price. Starting proposal (you set the dollars; 1 Credit ≈ $0.01):
-   - **BASIC (free):** 250 Credits/mo, HARD limit (~5 dossiers / ~7 legal lookups to evaluate).
-   - **PRO ~$25/mo:** 5,000 Credits + ~$0.008/Credit overage.
-   - **ULTRA ~$99/mo:** 30,000 Credits + ~$0.005/Credit overage.
+2. Toggle ON BASIC + ≥1 paid plan (turn MEGA off). Click the `+`/Edit in each plan's `Credits` row → a "PLAN / Credits" dialog: set **Quota Type = Monthly**, **Quota Limit**, **Limit Type**, **Overages**. Starting proposal (you set the dollars; 1 Credit ≈ $0.01):
+   - **BASIC (free):** Quota Limit **250**, **Hard Limit**, Overages $0. (Free tier MUST be Hard so users can't incur overage; ~5 dossiers / ~7 legal lookups.)
+   - **PRO ~$25/mo:** Quota Limit **5,000**, **Soft Limit**, Overages **$0.008**/Credit.
+   - **ULTRA ~$99/mo:** Quota Limit **30,000**, **Soft Limit**, Overages **$0.005**/Credit.
+   - (Set each paid plan's monthly price in its plan header/Edit.)
 3. Leave Requests / free-hard-limit / Bandwidth defaults alone.
 - Spec cost map: `/dossier` 50, `/oa-analyze` 25, `/challenges` `/litigation` `/company-litigation` 35, `/claims` `/legal-status` `/assignments` `/term` `/prosecution-timeline` `/attorney` 10, `/pregrant-pub` 15, `/entity-status` 5, free utilities 0.
 
