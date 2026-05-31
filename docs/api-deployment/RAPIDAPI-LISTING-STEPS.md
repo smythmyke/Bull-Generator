@@ -67,11 +67,13 @@ Studio (now "Rapid", Nokia-owned) entry point = **"Add API Project"** (upper-rig
 - **Hub Listing → Definitions → Endpoints** → import `openapi-rapidapi.yaml` (if not done at project creation).
 - Verify endpoints appear under **Patent / Legal Intelligence / Account**. Delete any stray empty group.
 
-### Step 4 — Security  ← *send the secret to Claude after this*
-- **Security tab → Firewall Settings:** copy the generated **`X-RapidAPI-Proxy-Secret`**.
-- Set **Proxy Timeout = 180**.
-- Turn **OFF** Threat Protection + Schema Validation.
-- **→ Paste that proxy secret to Claude.** It swaps the temp test secret in `functions/.env`, redeploys, and re-verifies §5a. (Until then, live gateway calls 401.)
+### Step 4 — Gateway / Security  ← *send the secret to Claude after this*  (confirmed layout 2026-05-31)
+Tab name in the sidebar is **Gateway** (under the API project, not the top "Security"). Fields:
+- **Firewall Settings → `X-RapidAPI-Proxy-Secret`** — shown masked; click the reveal/copy icon to get the real value.
+- **Threat Protection → OFF**, **Request Schema Validation → OFF** (both cause false-positive blocks; backend validates).
+- **Request Configurations → Proxy Timeout** — defaults to **0**; **set to 180** (max; AI endpoints can take 10–30s).
+- **Request Size Limit** — leave 0. **Authorization / Secret Headers / Transformations** — leave empty.
+- **→ Send the proxy secret to Claude** (paste here, OR set it in `functions/.env` yourself and say "done"). Claude swaps the temp test secret, redeploys, and re-verifies §5a. (Until then, live gateway calls 401.)
 
 ### Step 5 — Monetize (your pricing)
 - **Add custom quota Object named EXACTLY `Credits`.** Attach the billable endpoints.
