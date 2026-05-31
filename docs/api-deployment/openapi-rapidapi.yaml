@@ -1,101 +1,188 @@
 openapi: 3.0.3
 info:
-  title: AI Patent Search Generator API
+  title: AI Patent Search Generator
   version: "1.0.0"
+  # x-category is REQUIRED by RapidAPI's importer (must be an existing category).
+  x-category: Tools
+  x-badges:
+    - name: API Type
+      value: REST
+    - name: Coverage
+      value: US patents
+    - name: Data Source
+      value: USPTO (public domain)
   description: >
-    US patent intelligence: dossiers, prosecution, claims, citations, plus a
-    legal-intelligence layer — PTAB validity challenges, district-court
-    litigation history, and company-litigation reverse lookup — sourced from
-    USPTO public data.
+    US patent intelligence from USPTO public data. Turn a patent number into a
+    full dossier (bibliographic, claims, citations, family, CPC), prosecution
+    and examiner data, plus a legal-intelligence layer: PTAB validity
+    challenges, US district-court litigation history, and a company-litigation
+    reverse lookup.
 
 
-    Metering: each call is billed against the `Credits` quota via the
-    `X-RapidAPI-Billing` response header (1 Credit = $0.01 of list value). Each
-    endpoint's cost is in its summary. Failed requests (>=500) and bad input
-    (4xx) are not billed.
+    Billing: each call is metered against the `Credits` quota via the
+    `X-RapidAPI-Billing` response header (1 Credit = $0.01 of list value); each
+    endpoint's cost is in its summary. Bad input (4xx) and failures (>=500) are
+    not billed.
   contact:
     url: https://chromewebstore.google.com/
+
+# Root-level RapidAPI extension: front-loads the Hub "Docs" tab.
+x-documentation:
+  readme: >
+    # AI Patent Search Generator API
+
+
+    Patent intelligence for legaltech, IP research, and due-diligence tools —
+    all from USPTO public-domain data (US patents only).
+
+
+    ## What you can do
+
+    - **Dossier** — bibliographic, claims, citations, family, CPC in one call.
+
+    - **Legal intelligence** — has this patent been *challenged* at the PTAB
+      (and did it survive)? Who has been *sued* over it in district court?
+
+    - **Company lookup** — every patent suit a company has been involved in.
+
+    - **Enrichment** — in-force status, chain of title, term/PTA, attorneys of
+      record, entity status, and the as-filed publication.
+
+
+    ## Notes
+
+    - US patents only. Litigation coverage is comprehensive 2003-2016, partial
+      to 2020. PTAB and ODP data are current.
+
+    - Not legal advice — factual public-record reporting.
+  spotlights:
+    - title: PTAB validity challenges
+      description: Who attacked a patent's validity and whether it survived.
+      link: https://chromewebstore.google.com/
+    - title: District-court litigation history
+      description: Who sued whom over a patent, where, and over what.
+      link: https://chromewebstore.google.com/
+    - title: Company-litigation reverse lookup
+      description: Every patent suit involving a company (plaintiff or defendant).
+      link: https://chromewebstore.google.com/
+
 servers:
   # Direct Cloud Function URL (NOT Firebase Hosting — avoids the 60s edge timeout).
   - url: https://us-central1-solicitation-matcher-extension.cloudfunctions.net/ai
+
 tags:
   - name: Patent
-    description: Core patent data
+    description: Core patent data — dossier, claims, citations, family, examiner.
   - name: Legal Intelligence
-    description: Challenges, litigation, ownership
-  - name: Account
-    description: Probe & balance
+    description: PTAB challenges, district-court litigation, ownership.
+  - name: Enrichment
+    description: Term/PTA, attorneys, entity status, prosecution timeline, pre-grant pub.
 
 paths:
   /v1/dossier:
     post:
       tags: [Patent]
-      summary: Full patent dossier — biblio, claims, citations, family, CPC (50 Credits)
+      summary: Full patent dossier (50 Credits)
+      description: >
+        Complete dossier for a US patent — bibliographic data, full claims tree,
+        backward citations, US family, and CPC classifications. **Cost =50 Credits.**
       operationId: dossier
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/PatentNumberBody' }
-            example: { patentNumber: "US10000000B2" }
+      requestBody: { $ref: '#/components/requestBodies/PatentNumber' }
       responses:
-        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/DataEnvelope' } } } }
-        '404': { description: Patent not found }
+        '200': { $ref: '#/components/responses/Data' }
+        '400': { $ref: '#/components/responses/BadInput' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /v1/dossier-summary:
+    post:
+      tags: [Patent]
+      summary: AI executive summary + claim-scope rating (free)
+      description: Plain-English overview and claim-scope assessment for a patent. **Cost =0 Credits (bundled).**
+      operationId: dossierSummary
+      requestBody: { $ref: '#/components/requestBodies/PatentNumber' }
+      responses:
+        '200': { $ref: '#/components/responses/Data' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /v1/claims:
     post:
       tags: [Patent]
-      summary: Claims-only slice for a patent (10 Credits)
+      summary: Claims-only slice (10 Credits)
+      description: The full claims tree (independent + dependent) for a patent. **Cost =10 Credits.**
       operationId: claims
-      requestBody:
-        required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/PatentNumberBody' }, example: { patentNumber: "US10000000B2" } } }
-      responses: { '200': { description: OK } }
+      requestBody: { $ref: '#/components/requestBodies/PatentNumber' }
+      responses:
+        '200': { $ref: '#/components/responses/Data' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /v1/citations:
     post:
       tags: [Patent]
-      summary: Backward citations for a patent (free)
+      summary: Backward citations (free)
+      description: Patent + NPL references cited by a patent, each flagged examiner-cited. **Cost =0 Credits.**
       operationId: citations
-      requestBody:
-        required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/PatentNumberBody' }, example: { patentNumber: "US10000000B2" } } }
-      responses: { '200': { description: OK } }
+      requestBody: { $ref: '#/components/requestBodies/PatentNumber' }
+      responses:
+        '200': { $ref: '#/components/responses/Data' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
-  /v1/legal-status:
+  /v1/family:
     post:
-      tags: [Legal Intelligence]
-      summary: In-force vs lapsed/expired + maintenance history (10 Credits)
-      operationId: legalStatus
-      requestBody:
-        required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/PatentNumberBody' }, example: { patentNumber: "US10000000B2" } } }
-      responses: { '200': { description: OK } }
+      tags: [Patent]
+      summary: US patent family / continuity (free)
+      description: US continuity (parent/child — continuations, divisionals, CIPs). **Cost =0 Credits.**
+      operationId: family
+      requestBody: { $ref: '#/components/requestBodies/PatentNumber' }
+      responses:
+        '200': { $ref: '#/components/responses/Data' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
-  /v1/assignments:
+  /v1/examiner-stats:
     post:
-      tags: [Legal Intelligence]
-      summary: Chain of title — recorded assignments / conveyances (10 Credits)
-      operationId: assignments
-      requestBody:
-        required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/PatentNumberBody' }, example: { patentNumber: "US10000000B2" } } }
-      responses: { '200': { description: OK } }
+      tags: [Patent]
+      summary: Examiner & art-unit stats (free probe)
+      description: Assigned examiner, art unit, allowance rate, pendency. Good 0-cost probe. **Cost =0 Credits.**
+      operationId: examinerStats
+      requestBody: { $ref: '#/components/requestBodies/PatentNumber' }
+      responses:
+        '200': { $ref: '#/components/responses/Data' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/oa-analyze:
+    post:
+      tags: [Patent]
+      summary: Office Action AI analysis (25 Credits)
+      description: AI breakdown of an Office Action — rejections, cited art, response strategy. **Cost =25 Credits.**
+      operationId: oaAnalyze
+      requestBody: { $ref: '#/components/requestBodies/PatentNumber' }
+      responses:
+        '200': { $ref: '#/components/responses/Data' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /v1/challenges:
     post:
       tags: [Legal Intelligence]
-      summary: PTAB validity challenges — petitioner, type, outcome (35 Credits)
+      summary: PTAB validity challenges — survived or not (35 Credits)
+      description: >
+        PTAB challenge history (IPR/PGR/CBM): petitioner vs owner, counsel, dates,
+        and outcome (patent_survived / final_written_decision / terminated).
+        **Cost =35 Credits.**
       operationId: challenges
-      requestBody:
-        required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/PatentNumberBody' }, example: { patentNumber: "US8724622B2" } } }
-      responses: { '200': { description: OK } }
+      requestBody: { $ref: '#/components/requestBodies/PatentNumberLitigated' }
+      responses:
+        '200': { $ref: '#/components/responses/Data' }
+        '400': { $ref: '#/components/responses/BadInput' }
 
   /v1/litigation:
     post:
       tags: [Legal Intelligence]
-      summary: US district-court infringement suits for a patent (35 Credits)
+      summary: District-court infringement suits (35 Credits)
+      description: >
+        US district-court litigation for a patent — who sued whom, court, cause,
+        dates. USPTO dataset; coverage comprehensive 2003-2016, partial to 2020.
+        Empty result = not litigated on record. **Cost =35 Credits.**
       operationId: litigation
       requestBody:
         required: true
@@ -105,14 +192,20 @@ paths:
               allOf:
                 - { $ref: '#/components/schemas/PatentNumberBody' }
                 - type: object
-                  properties: { limit: { type: integer, description: Max cases } }
+                  properties: { limit: { type: integer, description: Max cases to return } }
             example: { patentNumber: "US8724622B2", limit: 25 }
-      responses: { '200': { description: OK } }
+      responses:
+        '200': { $ref: '#/components/responses/Data' }
+        '400': { $ref: '#/components/responses/BadInput' }
 
   /v1/company-litigation:
     post:
       tags: [Legal Intelligence]
-      summary: Reverse lookup — all patent suits involving a company (35 Credits)
+      summary: Reverse lookup — all suits involving a company (35 Credits)
+      description: >
+        Every US patent suit a company was involved in (plaintiff or defendant),
+        with patents, opposing parties, court, and cause. No exact match returns
+        name suggestions. **Cost =35 Credits.**
       operationId: companyLitigation
       requestBody:
         required: true
@@ -126,17 +219,86 @@ paths:
                 limit: { type: integer }
               additionalProperties: false
             example: { company: "Apple", limit: 25 }
-      responses: { '200': { description: OK } }
+      responses:
+        '200': { $ref: '#/components/responses/Data' }
+        '400': { $ref: '#/components/responses/BadInput' }
 
-  /v1/examiner-stats:
+  /v1/legal-status:
     post:
-      tags: [Patent]
-      summary: Examiner name, art unit, allowance rate (free probe)
-      operationId: examinerStats
-      requestBody:
-        required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/PatentNumberBody' }, example: { patentNumber: "US10000000B2" } } }
-      responses: { '200': { description: OK } }
+      tags: [Legal Intelligence]
+      summary: In-force status + maintenance history (10 Credits)
+      description: In-force vs lapsed/expired, anticipated expiration, maintenance-fee history. **Cost =10 Credits.**
+      operationId: legalStatus
+      requestBody: { $ref: '#/components/requestBodies/PatentNumber' }
+      responses:
+        '200': { $ref: '#/components/responses/Data' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/assignments:
+    post:
+      tags: [Legal Intelligence]
+      summary: Chain of title / assignments (10 Credits)
+      description: Recorded assignments — conveyances, reel/frame, assignor → assignee, current owner. **Cost =10 Credits.**
+      operationId: assignments
+      requestBody: { $ref: '#/components/requestBodies/PatentNumber' }
+      responses:
+        '200': { $ref: '#/components/responses/Data' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/term:
+    post:
+      tags: [Enrichment]
+      summary: Patent Term Adjustment & adjusted expiration (10 Credits)
+      description: PTA days + A/B/C delay breakdown and the adjusted expiration date. **Cost =10 Credits.**
+      operationId: term
+      requestBody: { $ref: '#/components/requestBodies/PatentNumber' }
+      responses:
+        '200': { $ref: '#/components/responses/Data' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/prosecution-timeline:
+    post:
+      tags: [Enrichment]
+      summary: Full USPTO event timeline (10 Credits)
+      description: Chronological USPTO event log (filings, office actions, notices, fees). **Cost =10 Credits.**
+      operationId: prosecutionTimeline
+      requestBody: { $ref: '#/components/requestBodies/PatentNumber' }
+      responses:
+        '200': { $ref: '#/components/responses/Data' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/attorney:
+    post:
+      tags: [Enrichment]
+      summary: Attorneys of record + docket (10 Credits)
+      description: Attorneys/agents (name + USPTO reg #), docket number, customer number. **Cost =10 Credits.**
+      operationId: attorney
+      requestBody: { $ref: '#/components/requestBodies/PatentNumber' }
+      responses:
+        '200': { $ref: '#/components/responses/Data' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/entity-status:
+    post:
+      tags: [Enrichment]
+      summary: Entity status — small/micro/large (5 Credits)
+      description: USPTO entity status (a company-size signal). **Cost =5 Credits.**
+      operationId: entityStatus
+      requestBody: { $ref: '#/components/requestBodies/PatentNumber' }
+      responses:
+        '200': { $ref: '#/components/responses/Data' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/pregrant-pub:
+    post:
+      tags: [Enrichment]
+      summary: Pre-grant publication (as-filed) (15 Credits)
+      description: Publication number/date + as-filed abstract and claims (vs as-granted). **Cost =15 Credits.**
+      operationId: pregrantPub
+      requestBody: { $ref: '#/components/requestBodies/PatentNumber' }
+      responses:
+        '200': { $ref: '#/components/responses/Data' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
 components:
   schemas:
@@ -147,8 +309,43 @@ components:
         patentNumber:
           type: string
           description: US patent publication number (e.g. US10000000B2).
+          example: "US10000000B2"
       additionalProperties: false
-    DataEnvelope:
+    Error:
       type: object
       properties:
-        data: { type: object, description: The endpoint payload. }
+        error: { type: string, description: Human-readable error message. }
+        code: { type: string, description: Machine-readable error code. }
+  requestBodies:
+    PatentNumber:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/PatentNumberBody' }
+          example: { patentNumber: "US10000000B2" }
+    PatentNumberLitigated:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/PatentNumberBody' }
+          example: { patentNumber: "US8724622B2" }
+  responses:
+    Data:
+      description: Success. Payload under `data`.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties: { data: { type: object } }
+    BadInput:
+      description: Invalid / missing input (Credits=0 — not billed).
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Unauthorized:
+      description: Missing or invalid credentials.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    NotFound:
+      description: Patent not found or out of coverage.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    RateLimited:
+      description: Rate limit exceeded.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
