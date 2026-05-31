@@ -25,6 +25,13 @@ import {
 import {handleChallengesRequest} from "./odp/ptab";
 import {handleLegalStatusRequest} from "./odp/legalStatus";
 import {handleAssignmentsRequest} from "./odp/assignments";
+import {
+  handleTermRequest,
+  handleProsecutionTimelineRequest,
+  handleAttorneyRequest,
+  handleEntityStatusRequest,
+  handlePregrantPubRequest,
+} from "./odp/enrichment";
 import {handleProsecutionHistoryRequest, handleOdpDocumentRequest} from "./usptoOdp";
 import {handleOfficeActionAnalysisRequest} from "./officeActionAnalyzer";
 import {handleExaminerStatsRequest} from "./examinerStats";
@@ -127,6 +134,11 @@ function scopeForPath(path: string): string | null {
   if (path === "/challenges") return "dossier";       // PTAB validity challenges
   if (path === "/legal-status") return "dossier";     // in-force / maintenance
   if (path === "/assignments") return "dossier";      // chain of title
+  if (path === "/term") return "dossier";             // PTA-adjusted expiration
+  if (path === "/prosecution-timeline") return "dossier"; // USPTO event log
+  if (path === "/attorney") return "dossier";         // attorneys of record
+  if (path === "/entity-status") return "dossier";    // small/micro/large
+  if (path === "/pregrant-pub") return "dossier";     // as-filed publication
   if (path === "/cpc") return "dossier";
   if (path === "/cpc-suggest") return "dossier";
   if (path === "/search-execute" || path === "/search-query") return "search";
@@ -533,6 +545,35 @@ export const ai = functions
         res.status(200).json({data: result});
         await logApiUsageIfKey(ctx);
         return;
+      }
+
+      // ── Enrichment endpoints (Phase 7; net-new ODP data; free in v1) ──
+      // All read the same file wrapper, share the dossier error mapping.
+      {
+        const odpEnrichment: Record<string, (b: { patentNumber?: string }) => Promise<{ error?: string; code?: string }>> = {
+          "/term": handleTermRequest,
+          "/prosecution-timeline": handleProsecutionTimelineRequest,
+          "/attorney": handleAttorneyRequest,
+          "/entity-status": handleEntityStatusRequest,
+          "/pregrant-pub": handlePregrantPubRequest,
+        };
+        const handler = odpEnrichment[path];
+        if (handler) {
+          const rl = await checkRateLimitFor(ctx);
+          if (rl) { sendRateLimit(res, rl.retryAfterSeconds); return; }
+          const result = await handler(req.body);
+          if (result.error) {
+            const statusCode = result.code === "invalid_number" ? 400 :
+              result.code === "not_found" ? 404 :
+              result.code === "rate_limited" ? 429 : 502;
+            res.status(statusCode).json({error: result.error, code: result.code});
+            await logApiUsageIfKey(ctx, { isError: true });
+            return;
+          }
+          res.status(200).json({data: result});
+          await logApiUsageIfKey(ctx);
+          return;
+        }
       }
 
       // Patent search — `mode: "execute"` runs the search against Google

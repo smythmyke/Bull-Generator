@@ -57,7 +57,7 @@ The legal/litigation layer is the headline value: higher-margin, harder to repli
 2. ✅ **Legal Intelligence bundle — BUILT + VERIFIED 2026-05-31.** `/v1/challenges` (PTAB), `/v1/legal-status` (in-force + maintenance history), `/v1/assignments` (chain of title). New files `functions/src/odp/{util,ptab,legalStatus,assignments}.ts`; `odpClient` generalized for POST (PTAB) + `eventDataBag`; `odpDossier` refactored onto shared `util`. Free in v1, available to BOTH auth paths (net-new ODP data, additive — no GP involved). Verified: US8724622 → 15 challenges (8 survived/3 settled/4 FWD, Microsoft & Apple v Uniloc); legal-status in-force + maintenance dates; assignments chain of title w/ reel-frame. `tsc` clean. Scopes mapped to `dossier`. **Pricing deferred to Phase 6** (currently free; per-claim PTAB-decision AI-parse is the future premium tier).
 3. Phase 5 — verify extension byte-identical
 4. Phase 4 — un-gate summary / claim-chart / search migration
-5. Phase 7 — remaining enrichment endpoints (term, timeline, attorney, entity, pregrant)
+5. ✅ Phase 7 — enrichment endpoints (term, timeline, attorney, entity, pregrant) — BUILT + VERIFIED 2026-05-31
 6. Phase 8b/8c — district-court litigation (USPTO dataset ingest, then CourtListener)
 7. Phase 6 — RapidAPI listing + premium pricing anchored on the legal bundle
 
@@ -209,7 +209,9 @@ Single edit to existing code (API-surface only):
 
 ---
 
-## Phase 7 — ODP-unlocked enrichment endpoints (net-new vs Google Patents)
+## Phase 7 — ODP-unlocked enrichment endpoints (net-new vs Google Patents) — ✅ BUILT 2026-05-31
+
+**Shipped (commit pending):** `/v1/{term, prosecution-timeline, attorney, entity-status, pregrant-pub}` in `functions/src/odp/enrichment.ts` (shared `resolveWrapper` front door; reads the same wrapper as the dossier). `/v1/legal-status` + `/v1/assignments` shipped earlier with the legal bundle. Free in v1, both auth paths, scopes→`dossier`. Verified vs real patents: term (US8000000 = +206 PTA days → 2028-05-11), 67-event timeline, 24 attorneys w/ reg#, entity status, 20 as-filed pregrant claims. Remaining Phase-7 item from the table below: nothing — all seven enrichment endpoints now live (`legal-status` + `assignments` in the legal bundle; the other five here).
 
 Verified 2026-05-31: the ODP file wrapper carries a prosecution / legal / administrative
 layer the Google Patents scrape never exposed. These become **new differentiated

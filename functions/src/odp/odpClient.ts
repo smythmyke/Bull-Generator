@@ -122,6 +122,8 @@ export interface OdpWrapper {
   pgpubDocumentMetaData?: { fileLocationURI?: string };
   assignmentBag?: Array<Record<string, unknown>>;
   eventDataBag?: OdpEvent[];
+  patentTermAdjustmentData?: Record<string, unknown>;
+  recordAttorney?: Record<string, unknown>;
   childContinuityBag?: OdpContinuityChild[];
   parentContinuityBag?: OdpContinuityParent[];
 }
