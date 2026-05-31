@@ -26,19 +26,28 @@
 
 ---
 
+## Current Studio navigation (confirmed live 2026-05-31)
+
+Studio (now "Rapid", Nokia-owned) entry point = **"Add API Project"** (upper-right of Studio). After the project exists, everything is in the left sidebar under **Hub Listing**:
+- **Hub Listing → General** → Base URL(s) [Step 2] + name/logo/category/visibility [Step 6]
+- **Hub Listing → Definitions → Endpoints** → import/verify OpenAPI [Step 3]
+- **Hub Listing → Monetize** → `Credits` quota + plans [Step 5]
+- **Security** tab → proxy secret + proxy timeout [Step 4]
+
 ## Steps
 
-### Step 1 — Create the API
-- **Add New API.**
+### Step 1 — Create the API project
+- **Add API Project** (upper-right of Studio).
 - **Name:** `AI Patent Search Generator`
-- **Category:** Data (or Tools / Business)
-- **Short description:** paste the tagline above.
+- **Description:** paste the tagline above.
+- **Category:** Data (or Tools / Business).
+- "Import data?" prompt → you may import `openapi-rapidapi.yaml` now, or skip and do it in Step 3.
 
 ### Step 2 — Base URL
-- Set Base URL to the **direct Cloud Function URL** above (NOT a Firebase Hosting URL). Confirm it matches after import.
+- **Hub Listing → General** → scroll to **Base URL(s)** → paste the **direct Cloud Function URL** above (NOT a Firebase Hosting URL). Confirm it matches if it auto-filled from the import.
 
-### Step 3 — Import endpoints
-- **Definitions → CI/CD → Import OpenAPI → Upload File** (newer UI: **API Specs → Endpoints**) → upload `openapi-rapidapi.yaml`.
+### Step 3 — Import / verify endpoints
+- **Hub Listing → Definitions → Endpoints** → import `openapi-rapidapi.yaml` (if not done at project creation).
 - Verify endpoints appear under **Patent / Legal Intelligence / Account**. Delete any stray empty group.
 
 ### Step 4 — Security  ← *send the secret to Claude after this*
