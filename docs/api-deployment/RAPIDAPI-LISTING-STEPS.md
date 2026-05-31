@@ -112,6 +112,16 @@ Leave Rate Limit / Require approval unchecked. **RapidAPI keeps 25% → you net 
 ### Step 5.5 — README (Docs / About tab)
 When prompted to "Add a README", paste the full content of **`rapidapi-readme.md`** (this folder) — it's the public-facing listing front page: highlights, the 17-endpoint catalog with Credit costs, request/response examples, coverage, and billing notes.
 
+### Step 5.6 — Spotlights (Overview tab → Add Spotlight)
+Hosted on GitHub Pages (no Firebase hosting tangle): `legal-intelligence.html` + `due-diligence.html` at repo root → live at `smythmyke.github.io/Bull-Generator/<file>`. Add two spotlights:
+
+1. **Title:** The legal layer most patent APIs don't have · **Link:** `https://smythmyke.github.io/Bull-Generator/legal-intelligence.html`
+   **Desc:** PTAB validity challenges, district-court litigation, and company-litigation reverse lookup for any US patent — find out if it's been attacked, whether it survived, and who's been sued over it. All from USPTO public data.
+2. **Title:** Vet a patent in 30 seconds · **Link:** `https://smythmyke.github.io/Bull-Generator/due-diligence.html`
+   **Desc:** One workflow — dossier + PTAB challenges + litigation + legal status = an instant risk profile. Worked example: US 8,724,622 (Uniloc) — survived 15 challenges, sued Microsoft/Amazon/Kik in 31 suits, still in force.
+
+(Also live: `developers.html` — REST+MCP hub. Pages = main branch root, build_type legacy; any root `.html` is live on push.)
+
 ### Step 6 — Listing details (Hub Listing → General) — confirmed fields 2026-05-31
 Most of this imports from the spec; fill / verify on the General page:
 - **Category** = `Tools` (set if the dropdown is empty).
