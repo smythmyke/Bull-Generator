@@ -75,12 +75,16 @@ Tab name in the sidebar is **Gateway** (under the API project, not the top "Secu
 - **Request Size Limit** — leave 0. **Authorization / Secret Headers / Transformations** — leave empty.
 - **→ Send the proxy secret to Claude** (paste here, OR set it in `functions/.env` yourself and say "done"). Claude swaps the temp test secret, redeploys, and re-verifies §5a. (Until then, live gateway calls 401.)
 
-### Step 5 — Monetize (your pricing)
-- **Add custom quota Object named EXACTLY `Credits`.** Attach the billable endpoints.
-- Plans (you set the dollars; 1 Credit ≈ $0.01 of value):
-  - **Free/BASIC:** small **hard** monthly cap (e.g. 100 Credits).
-  - **Paid:** larger monthly Credits + per-Credit overage.
-- Reference costs already in the spec: `/dossier` 50, `/challenges` `/litigation` `/company-litigation` 35, enrichment 10, free utilities 0.
+### Step 5 — Monetize (Hub Listing → Monetize → Public Plans) — confirmed 2026-05-31
+The page ships with default objects (Requests, Rapid-free-plans-hard-limit, Bandwidth Platform Fee) and 4 plan templates (BASIC/PRO/ULTRA/MEGA, all toggled off). You must ADD the `Credits` object.
+
+1. **+ Add Object → name EXACTLY `Credits`, Type = Quota.** (Must match the `X-RapidAPI-Billing: Credits=` header, or metering silently does nothing.)
+2. Toggle ON BASIC + ≥1 paid plan (turn MEGA off). **Edit** each → set its `Credits` quota + price. Starting proposal (you set the dollars; 1 Credit ≈ $0.01):
+   - **BASIC (free):** 250 Credits/mo, HARD limit (~5 dossiers / ~7 legal lookups to evaluate).
+   - **PRO ~$25/mo:** 5,000 Credits + ~$0.008/Credit overage.
+   - **ULTRA ~$99/mo:** 30,000 Credits + ~$0.005/Credit overage.
+3. Leave Requests / free-hard-limit / Bandwidth defaults alone.
+- Spec cost map: `/dossier` 50, `/oa-analyze` 25, `/challenges` `/litigation` `/company-litigation` 35, `/claims` `/legal-status` `/assignments` `/term` `/prosecution-timeline` `/attorney` 10, `/pregrant-pub` 15, `/entity-status` 5, free utilities 0.
 
 ### Step 5.5 — README (Docs / About tab)
 When prompted to "Add a README", paste the full content of **`rapidapi-readme.md`** (this folder) — it's the public-facing listing front page: highlights, the 17-endpoint catalog with Credit costs, request/response examples, coverage, and billing notes.
