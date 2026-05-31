@@ -78,3 +78,98 @@ export async function handleLitigationRequest(
     coverageNote: COVERAGE_NOTE,
   };
 }
+
+// ── Reverse lookup: company -> litigation (/v1/company-litigation) ───────
+// Backed by litigationByParty/{normName} (see scripts/ingest-company-litigation.js).
+// NOTE: this normalization MUST stay identical to that script's normName().
+
+const COMPANY_SUFFIX = /\b(incorporated|inc|corporation|corp|company|co|llc|ltd|limited|lp|llp|plc|gmbh|sa|ag|nv|bv)\b/g;
+
+function normCompanyName(s: string): string {
+  return (s || "").toLowerCase()
+    .replace(/&amp;/g, "&").replace(/&#39;/g, "'").replace(/&quot;/g, '"')
+    .replace(/[.,'"]/g, "")
+    .replace(COMPANY_SUFFIX, " ")
+    .replace(/[^a-z0-9 ]/g, " ")
+    .replace(/\s+/g, " ").trim();
+}
+
+export interface PartyLitigationCase {
+  role: "plaintiff" | "defendant";
+  caseNumber: string;
+  court: string;
+  dateFiled: string;
+  cause: string;
+  patents: string[];
+  opposing: string[];
+}
+
+export interface CompanyLitigationResult {
+  query?: string;
+  matchedName?: string;
+  displayNames?: string[];
+  caseCount?: number;
+  asPlaintiffCount?: number;
+  asDefendantCount?: number;
+  cases?: PartyLitigationCase[];
+  truncated?: boolean;
+  related?: { name: string; displayNames: string[]; caseCount: number }[];
+  suggestions?: { name: string; displayNames: string[]; caseCount: number }[];
+  coverageNote?: string;
+  error?: string;
+  code?: "invalid_input";
+}
+
+export async function handleCompanyLitigationRequest(
+  body: { company?: string; limit?: number }
+): Promise<CompanyLitigationResult> {
+  const q = normCompanyName(body.company || "");
+  if (!q || q.length < 2) {
+    return { error: "Provide a company name (e.g. 'Microsoft')", code: "invalid_input" };
+  }
+
+  const db = admin.firestore();
+  const col = db.collection("litigationByParty");
+
+  // 1. Exact normalized match -> full record. Also surface bigger siblings so a
+  //    small exact entity (e.g. "samsung") doesn't hide "samsung electronics".
+  const exact = await col.doc(q.slice(0, 1400)).get();
+  if (exact.exists) {
+    const d = exact.data()!;
+    const cases = (d.cases as PartyLitigationCase[]) || [];
+    const limit = typeof body.limit === "number" && body.limit > 0 ? Math.floor(body.limit) : Math.min(cases.length, 100);
+    const sib = await col.orderBy("normalizedName").startAt(q).endAt(q + "").limit(20).get();
+    const related = sib.docs.map((doc) => doc.data())
+      .filter((r) => (r.normalizedName as string) !== q)
+      .map((r) => ({ name: r.normalizedName as string, displayNames: (r.displayNames as string[]) || [], caseCount: (r.caseCount as number) || 0 }))
+      .sort((a, b) => b.caseCount - a.caseCount).slice(0, 6);
+    return {
+      query: body.company,
+      matchedName: d.normalizedName as string,
+      displayNames: (d.displayNames as string[]) || [],
+      caseCount: (d.caseCount as number) ?? cases.length,
+      asPlaintiffCount: d.asPlaintiffCount as number,
+      asDefendantCount: d.asDefendantCount as number,
+      cases: cases.slice(0, limit),
+      truncated: (d.truncated as boolean) || cases.length > limit,
+      ...(related.length ? { related } : {}),
+      coverageNote: COVERAGE_NOTE,
+    };
+  }
+
+  // 2. No exact match — prefix search for candidate companies to disambiguate.
+  const snap = await col.orderBy("normalizedName").startAt(q).endAt(q + "").limit(10).get();
+  const suggestions = snap.docs.map((doc) => {
+    const d = doc.data();
+    return { name: d.normalizedName as string, displayNames: (d.displayNames as string[]) || [], caseCount: (d.caseCount as number) || 0 };
+  }).sort((a, b) => b.caseCount - a.caseCount);
+
+  return {
+    query: body.company,
+    caseCount: 0,
+    suggestions,
+    coverageNote: suggestions.length
+      ? "No exact match; showing companies whose name starts with your query. Re-query with one of these."
+      : `No litigation on record for a company matching '${body.company}' (repeat-litigant index, ${COVERAGE_NOTE})`,
+  };
+}

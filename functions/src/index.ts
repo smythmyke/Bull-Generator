@@ -25,7 +25,7 @@ import {
 import {handleChallengesRequest} from "./odp/ptab";
 import {handleLegalStatusRequest} from "./odp/legalStatus";
 import {handleAssignmentsRequest} from "./odp/assignments";
-import {handleLitigationRequest} from "./litigation";
+import {handleLitigationRequest, handleCompanyLitigationRequest} from "./litigation";
 import {
   handleTermRequest,
   handleProsecutionTimelineRequest,
@@ -136,6 +136,7 @@ function scopeForPath(path: string): string | null {
   if (path === "/legal-status") return "dossier";     // in-force / maintenance
   if (path === "/assignments") return "dossier";      // chain of title
   if (path === "/litigation") return "dossier";       // district-court suits
+  if (path === "/company-litigation") return "dossier"; // reverse lookup by company
   if (path === "/term") return "dossier";             // PTA-adjusted expiration
   if (path === "/prosecution-timeline") return "dossier"; // USPTO event log
   if (path === "/attorney") return "dossier";         // attorneys of record
@@ -543,6 +544,22 @@ export const ai = functions
         const result = await handleLitigationRequest(req.body);
         if (result.error) {
           res.status(result.code === "invalid_number" ? 400 : 502).json({error: result.error, code: result.code});
+          await logApiUsageIfKey(ctx, { isError: true });
+          return;
+        }
+        res.status(200).json({data: result});
+        await logApiUsageIfKey(ctx);
+        return;
+      }
+
+      // Company -> litigation (reverse lookup). Free; empty/suggestions when no
+      // exact match. Input: { company, limit? }.
+      if (path === "/company-litigation") {
+        const rl = await checkRateLimitFor(ctx);
+        if (rl) { sendRateLimit(res, rl.retryAfterSeconds); return; }
+        const result = await handleCompanyLitigationRequest(req.body);
+        if (result.error) {
+          res.status(result.code === "invalid_input" ? 400 : 502).json({error: result.error, code: result.code});
           await logApiUsageIfKey(ctx, { isError: true });
           return;
         }
