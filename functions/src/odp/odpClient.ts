@@ -40,16 +40,35 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+export interface OdpRequestOpts {
+  method?: string;
+  /** JSON body — serialized and sent with Content-Type: application/json. */
+  body?: unknown;
+  accept?: string;
+}
+
 /**
- * GET with the API key, retrying on throttle statuses. Returns the Response on
- * a 2xx; throws OdpAuthError / OdpRateLimitedError. 404 is returned to the
- * caller (response.status === 404) so it can decide between not-found and empty.
+ * Authenticated ODP request with retry on throttle statuses. Returns the
+ * Response on a 2xx; throws OdpAuthError / OdpRateLimitedError. 404 is returned
+ * to the caller (response.status === 404) so it can decide not-found vs empty.
+ * Exported so the PTAB module (POST search) shares the same backoff + auth.
  */
-async function getWithRetry(url: string, apiKey: string, accept: string): Promise<Response> {
+export async function odpRequest(
+  url: string,
+  apiKey: string,
+  opts: OdpRequestOpts = {}
+): Promise<Response> {
+  const { method = "GET", body, accept = "application/json" } = opts;
   let lastStatus = 0;
   for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
     const response = await fetch(url, {
-      headers: { "X-API-KEY": apiKey, Accept: accept },
+      method,
+      headers: {
+        "X-API-KEY": apiKey,
+        Accept: accept,
+        ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+      },
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     if (response.status === 401 || response.status === 403) {
@@ -90,12 +109,19 @@ export interface OdpContinuityParent {
   parentApplicationStatusDescriptionText?: string;
 }
 
+export interface OdpEvent {
+  eventCode?: string;
+  eventDescriptionText?: string;
+  eventDate?: string;
+}
+
 export interface OdpWrapper {
   applicationNumberText?: string;
   applicationMetaData?: Record<string, unknown>;
   grantDocumentMetaData?: { fileLocationURI?: string };
   pgpubDocumentMetaData?: { fileLocationURI?: string };
   assignmentBag?: Array<Record<string, unknown>>;
+  eventDataBag?: OdpEvent[];
   childContinuityBag?: OdpContinuityChild[];
   parentContinuityBag?: OdpContinuityParent[];
 }
@@ -116,7 +142,7 @@ export async function searchByPatentNumber(
   apiKey: string
 ): Promise<OdpWrapper | null> {
   const url = `${ODP_BASE}/search?q=applicationMetaData.patentNumber:${encodeURIComponent(patentDigits)}`;
-  const response = await getWithRetry(url, apiKey, "application/json");
+  const response = await odpRequest(url, apiKey);
   if (response.status === 404) return null;
   const body = (await response.json()) as OdpSearchResponse;
   const bag = body.patentFileWrapperDataBag;
@@ -129,7 +155,7 @@ export async function searchByPatentNumber(
  * object; Node's fetch follows redirects by default. Returns the XML string.
  */
 export async function fetchGrantXml(fileLocationUri: string, apiKey: string): Promise<string> {
-  const response = await getWithRetry(fileLocationUri, apiKey, "application/xml");
+  const response = await odpRequest(fileLocationUri, apiKey, { accept: "application/xml" });
   if (response.status === 404) {
     throw new OdpNotFoundError(`grant XML at ${fileLocationUri}`);
   }
@@ -150,7 +176,7 @@ export async function fetchContinuity(
   apiKey: string
 ): Promise<{ parents: OdpContinuityParent[]; children: OdpContinuityChild[] }> {
   const url = `${ODP_BASE}/${encodeURIComponent(appNumber)}/continuity`;
-  const response = await getWithRetry(url, apiKey, "application/json");
+  const response = await odpRequest(url, apiKey);
   if (response.status === 404) return { parents: [], children: [] };
   const body = (await response.json()) as OdpSearchResponse;
   const w = body.patentFileWrapperDataBag?.[0];

@@ -22,6 +22,9 @@ import {
   handleOdpFamilyRequest,
   handleOdpClaimsRequest,
 } from "./odp/odpDossier";
+import {handleChallengesRequest} from "./odp/ptab";
+import {handleLegalStatusRequest} from "./odp/legalStatus";
+import {handleAssignmentsRequest} from "./odp/assignments";
 import {handleProsecutionHistoryRequest, handleOdpDocumentRequest} from "./usptoOdp";
 import {handleOfficeActionAnalysisRequest} from "./officeActionAnalyzer";
 import {handleExaminerStatsRequest} from "./examinerStats";
@@ -121,6 +124,9 @@ function scopeForPath(path: string): string | null {
   if (path === "/citations") return "dossier";
   if (path === "/family") return "dossier";
   if (path === "/claims") return "dossier";
+  if (path === "/challenges") return "dossier";       // PTAB validity challenges
+  if (path === "/legal-status") return "dossier";     // in-force / maintenance
+  if (path === "/assignments") return "dossier";      // chain of title
   if (path === "/cpc") return "dossier";
   if (path === "/cpc-suggest") return "dossier";
   if (path === "/search-execute" || path === "/search-query") return "search";
@@ -468,6 +474,64 @@ export const ai = functions
           res.status(200).json({data: payload});
           await logApiUsageIfKey(ctx);
         }
+        return;
+      }
+
+      // ── Legal Intelligence bundle (net-new ODP data; US-only; free in v1) ──
+      // Factual public-record reporting, available to both the extension
+      // (Firebase) and API/MCP (key). No Google Patents involved.
+
+      // Validity challenges (PTAB) — who challenged this patent, type, outcome.
+      if (path === "/challenges") {
+        const rl = await checkRateLimitFor(ctx);
+        if (rl) { sendRateLimit(res, rl.retryAfterSeconds); return; }
+        const result = await handleChallengesRequest(req.body);
+        if (result.error) {
+          const statusCode = result.code === "invalid_number" ? 400 :
+            result.code === "not_found" ? 404 :
+            result.code === "rate_limited" ? 429 : 502;
+          res.status(statusCode).json({error: result.error, code: result.code});
+          await logApiUsageIfKey(ctx, { isError: true });
+          return;
+        }
+        res.status(200).json({data: result});
+        await logApiUsageIfKey(ctx);
+        return;
+      }
+
+      // Legal status — in-force vs lapsed/expired + maintenance-fee history.
+      if (path === "/legal-status") {
+        const rl = await checkRateLimitFor(ctx);
+        if (rl) { sendRateLimit(res, rl.retryAfterSeconds); return; }
+        const result = await handleLegalStatusRequest(req.body);
+        if (result.error) {
+          const statusCode = result.code === "invalid_number" ? 400 :
+            result.code === "not_found" ? 404 :
+            result.code === "rate_limited" ? 429 : 502;
+          res.status(statusCode).json({error: result.error, code: result.code});
+          await logApiUsageIfKey(ctx, { isError: true });
+          return;
+        }
+        res.status(200).json({data: result});
+        await logApiUsageIfKey(ctx);
+        return;
+      }
+
+      // Assignments — chain of title (recorded conveyances, reel/frame).
+      if (path === "/assignments") {
+        const rl = await checkRateLimitFor(ctx);
+        if (rl) { sendRateLimit(res, rl.retryAfterSeconds); return; }
+        const result = await handleAssignmentsRequest(req.body);
+        if (result.error) {
+          const statusCode = result.code === "invalid_number" ? 400 :
+            result.code === "not_found" ? 404 :
+            result.code === "rate_limited" ? 429 : 502;
+          res.status(statusCode).json({error: result.error, code: result.code});
+          await logApiUsageIfKey(ctx, { isError: true });
+          return;
+        }
+        res.status(200).json({data: result});
+        await logApiUsageIfKey(ctx);
         return;
       }
 
