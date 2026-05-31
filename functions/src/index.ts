@@ -15,6 +15,13 @@ import {
   handleClaimsRequest,
 } from "./patentDossier";
 import {handleClaimChartRequest, handleStandaloneClaimChartRequest} from "./claimChart";
+import {
+  handleOdpDossierRequest,
+  handleOdpSimilarRequest,
+  handleOdpCitationsRequest,
+  handleOdpFamilyRequest,
+  handleOdpClaimsRequest,
+} from "./odp/odpDossier";
 import {handleProsecutionHistoryRequest, handleOdpDocumentRequest} from "./usptoOdp";
 import {handleOfficeActionAnalysisRequest} from "./officeActionAnalyzer";
 import {handleExaminerStatsRequest} from "./examinerStats";
@@ -203,6 +210,18 @@ export const ai = functions
         (req.body as { source: string }).source = platformSource;
       }
 
+      // Data-source split (PLAN-API-DATA-MIGRATION.md): API-key / MCP callers
+      // are served from USPTO ODP (public-domain, RapidAPI-safe). The browser
+      // extension (Firebase token) keeps the existing Google Patents path,
+      // byte-for-byte unchanged. The dossier-family handlers share an identical
+      // result contract, so the dispatch blocks below are source-agnostic.
+      const useOdp = ctx.source === "apikey";
+      const dossierHandler = useOdp ? handleOdpDossierRequest : handlePatentDossierRequest;
+      const similarHandler = useOdp ? handleOdpSimilarRequest : handleSimilarRequest;
+      const citationsHandler = useOdp ? handleOdpCitationsRequest : handleCitationsRequest;
+      const familyHandler = useOdp ? handleOdpFamilyRequest : handleFamilyRequest;
+      const claimsHandler = useOdp ? handleOdpClaimsRequest : handleClaimsRequest;
+
       // Scope check (no-op for Firebase token which holds "*")
       const requiredScope = scopeForPath(path);
       if (requiredScope && !hasScope(ctx, requiredScope)) {
@@ -242,7 +261,7 @@ export const ai = functions
         const db = admin.firestore();
         const rl = await checkRateLimitFor(ctx);
         if (rl) { sendRateLimit(res, rl.retryAfterSeconds); return; }
-        const result = await handlePatentDossierRequest(req.body);
+        const result = await dossierHandler(req.body);
         if (result.error) {
           const statusCode = result.code === "invalid_number" ? 400 :
             result.code === "not_found" ? 404 :
@@ -279,6 +298,17 @@ export const ai = functions
         const db = admin.firestore();
         const rl = await checkRateLimitFor(ctx);
         if (rl) { sendRateLimit(res, rl.retryAfterSeconds); return; }
+        // Claim chart fetches its dossier via Google Patents internally. Gate
+        // API/MCP callers until the ODP-backed path lands (PLAN-API-DATA-MIGRATION.md
+        // Phase 4) so no scraped data is served on the marketplace surface.
+        if (useOdp) {
+          res.status(501).json({
+            error: "Claim chart is not yet available on the public API. ODP-backed version is in progress.",
+            code: "not_implemented",
+          });
+          await logApiUsageIfKey(ctx, { isError: true });
+          return;
+        }
         const isStandalone = !Array.isArray((req.body as { claims?: unknown })?.claims) ||
           ((req.body as { claims?: unknown[] }).claims?.length ?? 0) === 0;
         if (isStandalone) {
@@ -326,6 +356,17 @@ export const ai = functions
       if (path === "/dossier-summary") {
         const rl = await checkRateLimitFor(ctx);
         if (rl) { sendRateLimit(res, rl.retryAfterSeconds); return; }
+        // ODP-backed summary not shipped yet (handler fetches via Google Patents
+        // internally). Gate API/MCP callers rather than serve scraped data on the
+        // marketplace surface. See PLAN-API-DATA-MIGRATION.md Phase 4.
+        if (useOdp) {
+          res.status(501).json({
+            error: "AI summary is not yet available on the public API. Use /v1/dossier (includes abstract, claims, CPC) for now.",
+            code: "not_implemented",
+          });
+          await logApiUsageIfKey(ctx, { isError: true });
+          return;
+        }
         const result = await handleDossierSummaryRequest(req.body);
         if (result.error) {
           const statusCode = result.code === "invalid_number" ? 400 :
@@ -345,7 +386,7 @@ export const ai = functions
       if (path === "/similar") {
         const rl = await checkRateLimitFor(ctx);
         if (rl) { sendRateLimit(res, rl.retryAfterSeconds); return; }
-        const result = await handleSimilarRequest(req.body);
+        const result = await similarHandler(req.body);
         if (result.error) {
           const statusCode = result.code === "invalid_number" ? 400 :
             result.code === "not_found" ? 404 :
@@ -364,7 +405,7 @@ export const ai = functions
       if (path === "/citations") {
         const rl = await checkRateLimitFor(ctx);
         if (rl) { sendRateLimit(res, rl.retryAfterSeconds); return; }
-        const result = await handleCitationsRequest(req.body);
+        const result = await citationsHandler(req.body);
         if (result.error) {
           const statusCode = result.code === "invalid_number" ? 400 :
             result.code === "not_found" ? 404 :
@@ -382,7 +423,7 @@ export const ai = functions
       if (path === "/family") {
         const rl = await checkRateLimitFor(ctx);
         if (rl) { sendRateLimit(res, rl.retryAfterSeconds); return; }
-        const result = await handleFamilyRequest(req.body);
+        const result = await familyHandler(req.body);
         if (result.error) {
           const statusCode = result.code === "invalid_number" ? 400 :
             result.code === "not_found" ? 404 :
@@ -403,7 +444,7 @@ export const ai = functions
         const db = admin.firestore();
         const rl = await checkRateLimitFor(ctx);
         if (rl) { sendRateLimit(res, rl.retryAfterSeconds); return; }
-        const result = await handleClaimsRequest(req.body);
+        const result = await claimsHandler(req.body);
         if (result.error) {
           const statusCode = result.code === "invalid_number" ? 400 :
             result.code === "not_found" ? 404 :

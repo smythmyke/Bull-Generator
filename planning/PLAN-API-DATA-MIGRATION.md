@@ -49,6 +49,20 @@ Already on USPTO ODP today (clean, unaffected by this plan): `/v1/prosecution-hi
 
 ## Phases
 
+## Build sequence (revised 2026-05-31 — legal-intelligence-first)
+
+The legal/litigation layer is the headline value: higher-margin, harder to replicate, and — critically — **lower legal risk** than the planned W3 FTO agent. Serving factual legal data (who challenged, who sued, is it alive, who owns it) is **public-record reporting = 🟢 green-tier** in `REVENUE-BENCHMARKS.md`; it is NOT a legal opinion, so it avoids the 🔴 UPL exposure that gates the FTO agent. Revised order:
+
+1. ✅ Phase 3 — core ODP dossier (done)
+2. **Legal Intelligence bundle (PRIORITY):** `/v1/challenges` (PTAB — verified) + `/v1/legal-status` (in-force from maintenance events) + `/v1/assignments` (chain of title). All on the existing ODP key, riding the Phase-3 fetch.
+3. Phase 5 — verify extension byte-identical
+4. Phase 4 — un-gate summary / claim-chart / search migration
+5. Phase 7 — remaining enrichment endpoints (term, timeline, attorney, entity, pregrant)
+6. Phase 8b/8c — district-court litigation (USPTO dataset ingest, then CourtListener)
+7. Phase 6 — RapidAPI listing + premium pricing anchored on the legal bundle
+
+**Positioning:** screening-grade public-record intelligence for the downmarket (solo / pro se / small firms / investors), NOT litigation-grade analytics (Lex Machina / Docket Navigator own that). Always under the existing "not legal advice" disclaimer.
+
 ### Phase 0 — Data-source reconnaissance *(investigation only, no code)*
 Hard facts on USPTO ODP before writing anything. EPO/WIPO scoped here only as desk research (no registration required yet).
 
@@ -147,7 +161,21 @@ Decided with Phase 1 spike data in hand. **Verdict: GO, US-only, ODP-sourced.**
 
 **Gate cleared — Phase 3 (production code) is unblocked.**
 
-### Phase 3 — Parallel ODP module *(first production code — additive only)*
+### Phase 3 — Parallel ODP module *(first production code — additive only)* — ◐ CORE DONE 2026-05-31
+
+**Principle: zero edits to `patentDossier.ts` (the Google Patents scraper) or `claimChart.ts`. The extension path is untouched. New code only, plus auth-source routing in the dispatcher.**
+
+**Status (2026-05-31):** Built and verified end-to-end against real patents. New files `functions/src/odp/{grantXmlParser,odpClient,odpDossier}.ts`. `index.ts` selects ODP handlers when `ctx.source === "apikey"` (extension's Firebase-token path unchanged). `tsc` clean. Verified: US10000000, US10509666, US7654321, US7000000, US8000000 all reconstruct correctly (biblio, abstract, claims tree w/ independents, backward citations, CPC, US family); EP rejected by US-only guard; pre-2001/no-grant returns clean `not_found`. Harness: `functions/scripts/test-odp-dossier.js`.
+
+**Routing chosen:** rather than re-point the V1 alias, the dispatcher branches on `ctx.source` (`apikey` → ODP, `firebase` → Google Patents). This gives the same guarantee (API keys never reach Google Patents) and is provably contained to `index.ts`. Endpoints wired to ODP for API keys: `/v1/dossier`, `/v1/similar`, `/v1/citations`, `/v1/family`, `/v1/claims`.
+
+**Deferred to Phase 4 (gated, not leaking):** `/v1/dossier-summary` and `/v1/claim-chart` fetch their dossier via Google Patents internally; for API-key callers they now return a clean `501 not_implemented` ("use /v1/dossier") so no scraped data is served on the marketplace surface. ODP-backing these (summary reimplements its own inline GP fetch; claim-chart calls `handlePatentDossierRequest`) is the next sub-task. `/v1/search` execution (separate Google XHR query + AI-Boolean pipeline in `searchExecute.ts`) also remains.
+
+**Minor known gap:** pre-2013 patents with no `cpcClassificationBag` in biblio yield `cpc=0` (CPC postdates them). Could fall back to grant-XML `classification-cpc` if needed.
+
+---
+
+Original design notes (for reference):
 
 **Principle: zero edits to `patentDossier.ts` (the Google Patents scraper). The extension path is untouched. New code only, plus a one-line API alias re-point.**
 
@@ -180,6 +208,62 @@ Single edit to existing code (API-surface only):
 - [ ] List only the clean ODP-backed surface.
 
 ---
+
+## Phase 7 — ODP-unlocked enrichment endpoints (net-new vs Google Patents)
+
+Verified 2026-05-31: the ODP file wrapper carries a prosecution / legal / administrative
+layer the Google Patents scrape never exposed. These become **new differentiated
+endpoints + MCP tools a Google-scraping competitor structurally cannot offer.** US-only;
+each degrades to empty gracefully when a field is absent. All ride the SAME ODP fetch
+already performed for `/v1/dossier` (the search call returns most of these fields inline),
+so they are cheap to add once `odpClient` is in place.
+
+| Candidate endpoint | MCP tool | ODP source (verified field) | Value |
+|---|---|---|---|
+| `/v1/legal-status` | `patent_legal_status` | `eventDataBag` maintenance-fee events | in-force vs lapsed + fee history (cleaner than Google's label) |
+| `/v1/assignments` | `patent_assignments` | `assignmentBag` (reel/frame, `conveyanceText`, assignor/assignee, dates) | chain of title; M&A / litigation due diligence (🟢 green in REVENUE-BENCHMARKS) |
+| `/v1/term` | `patent_term` | `patentTermAdjustmentData` (A/B/C delay) | PTA-adjusted expiration math |
+| `/v1/prosecution-timeline` | `patent_timeline` | `eventDataBag` (full event log, e.g. 67 events) | event history — distinct from `/prosecution-history` (which lists *documents*) |
+| `/v1/attorney` | `patent_attorney` | `recordAttorney` (`attorneyBag`, `powerOfAttorneyBag`, `customerNumber`) + `docketNumber` | who prosecutes for whom — competitive intel |
+| `/v1/entity-status` | (bundled in dossier) | `applicationMetaData.entityStatusData` | small/micro/large — company-size signal |
+| `/v1/pregrant-pub` | `patent_pregrant` | `pgpubDocumentMetaData.fileLocationURI` | as-filed vs as-granted claim diff |
+
+Notes:
+- **Overlap:** `/examiner-stats` + `/prosecution-history` already tap ODP. The timeline / PTA / assignments / attorney / entity-status / pgpub pieces are net-new and currently unexposed anywhere.
+- Propagate to ROADMAP backlog + `PLAN-MCP-SERVER.md` tool list when scheduled.
+- Build only after the Phase 3–5 core dossier ships and proves reliable.
+- **Litigation history** (who-sued-who) is a separate track — see "Litigation-history sources (research)" below; it needs sources beyond ODP (PTAB API for validity challenges, CourtListener/RECAP for district-court suits).
+
+## Phase 8 — Litigation history (who-sued-who-over-what)
+
+Three free sources, sequenced by effort-vs-payoff. PTAB + the USPTO litigation dataset are
+public-domain (RapidAPI-safe); CourtListener ToS needs review before resale. Build after the
+core dossier (Phase 3–5) proves reliable.
+
+### Stage 8a — PTAB validity challenges — ✅ VERIFIED 2026-05-31
+
+**Uses our EXISTING ODP key — zero new auth.** Answers "who challenged this patent's validity, when, with what outcome."
+
+- `POST https://api.uspto.gov/api/v1/patent/trials/proceedings/search`, body `{"q":"patentOwnerData.patentNumber:<digits>"}`, header `X-API-KEY`.
+- Also: `GET /patent/trials/proceedings/{trialNumber}`, `GET /patent/trials/{trialNumber}/documents`, `POST /patent/trials/decisions/search`.
+- Per record: `trialNumber` (e.g. IPR2019-01559), `patentOwnerData` (realPartyInInterestName + counsel + art unit), `regularPetitionerData` (challenger realPartyInInterestName + counsel), `trialMetaData` (`trialTypeCode` IPR/PGR/CBM, `petitionFilingDate`, `accordedFilingDate`, `institutionDecisionDate`, `trialStatusCategory`).
+- **Verified:** patent 8724622 (Uniloc) → 15 IPRs; e.g. **Microsoft Corporation** challenged **Uniloc 2017 LLC**, IPR2019-01559, filed 2019-09-13, instituted 2020-03-12. HTTP 200, 0.22s.
+- **Outcome is free + structured:** `trialMetaData.trialStatusCategory` ∈ {`Institution Denied` (patent survived the challenge), `Final Written Decision` (claims usually cancelled), `Terminated-Other` (settled), …}. For 8724622: 8 denied / 4 FWD / 3 terminated; petitioners include Apple and Microsoft.
+- **Decision documents (verified):** `GET /patent/trials/{trialNumber}/documents` → 78 docs for IPR2017-01798; each `documentData` has `documentTitleText`, `documentTypeDescriptionText`, `documentFilingDate`, and `fileDownloadURI` (FWD / institution-decision PDFs downloadable). The decisions-*search* endpoint field name is still TBD (404'd on `patentNumber` and `proceedingNumber`) — the documents endpoint covers the need.
+- **Per-claim outcome** ("claims 1–8 held unpatentable") lives in the FWD PDF *text*, NOT a structured field → fetch + AI-parse (reuse the `/oa-analyze` Gemini-multimodal pattern), **credit-priced like OA analysis**. Trial-level outcome = free/structured; per-claim = premium parse.
+- → New endpoint `/v1/challenges` (MCP `patent_challenges`). Precise, current, public-domain. **Ships first (part of the priority Legal Intelligence bundle).**
+
+### Stage 8b — District-court infringement (historical)
+
+- **USPTO OCE Patent Litigation Dataset (PTLITIG):** ~97k district-court cases 1963–2020, with **hand-coded patent-in-suit** + parties + attorneys + cause of action + court + dates. Bulk download (Stata/CSV) → ingest to Firestore for free per-patent lookups.
+- → New endpoint `/v1/litigation` (MCP `patent_litigation`). Public-domain. **Caveat: coverage ends 2020** (historical only).
+
+### Stage 8c — District-court infringement (current)
+
+- **CourtListener / RECAP API (Free Law Project):** live federal dockets; filter Nature-of-Suit 830 (Patent) + party name. Separate API + key + attribution/ToS.
+- → Enrichment layer for active suits. **Caveat:** patent#→case linkage is party-level, not always precise (PACER dockets rarely list patent numbers in structured form). **Review resale ToS before listing.** Build last.
+
+**Coverage summary:** 8a = validity challenges (precise + current); 8b = infringement suits (precise + historical ≤2020); 8c = infringement suits (live but party-level). Together they give a real "litigation history" view, mostly on public-domain data.
 
 ## Parallel track (stakeholder-driven, optional)
 
