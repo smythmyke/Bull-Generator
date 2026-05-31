@@ -58,7 +58,7 @@ The legal/litigation layer is the headline value: higher-margin, harder to repli
 3. ✅ Phase 5 — extension verified byte-identical 2026-05-31 (git: `patentDossier.ts`/`claimChart.ts` unchanged in all migration commits; behavioral: GP path still returns full dossier w/ 14 fwd cites + 15 similar for US10000000)
 4. ◐ Phase 4 — summary + claim-chart un-gated onto ODP ✅ 2026-05-31 (additive `fetchDossier` injection; API/MCP pass `handleOdpDossierRequest`, extension omits it → GP read-through unchanged; both verified green). `/v1/search` execution still on Google Patents — remaining.
 5. ✅ Phase 7 — enrichment endpoints (term, timeline, attorney, entity, pregrant) — BUILT + VERIFIED 2026-05-31
-6. Phase 8b/8c — district-court litigation (USPTO dataset ingest, then CourtListener)
+6. ◐ Phase 8b — district-court litigation: ✅ `/v1/litigation` BUILT + INGESTED 2026-05-31 (56,486 patents from USPTO PTLITIG → Firestore `litigationByPatent`; verified US8724622→31 suits incl. Uniloc v Microsoft/Amazon). 8c CourtListener (live) still optional.
 7. Phase 6 — RapidAPI listing + premium pricing anchored on the legal bundle
 
 **Positioning:** screening-grade public-record intelligence for the downmarket (solo / pro se / small firms / investors), NOT litigation-grade analytics (Lex Machina / Docket Navigator own that). Always under the existing "not legal advice" disclaimer.

@@ -44,3 +44,6 @@ functions/fto-output/
 # Sibling repo — patent-search-mcp-server is published separately at
 # github.com/smythmyke/patent-search-mcp-server. Lives here for dev convenience.
 mcp-server/
+
+# Litigation dataset scratch (USPTO PTLITIG CSVs — re-downloadable)
+.litig-scratch/
