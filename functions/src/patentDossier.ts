@@ -755,6 +755,27 @@ export async function handleFamilyRequest(
   };
 }
 
+export interface ClaimsResult {
+  patentNumber?: string;
+  claims?: DossierClaims;
+  cached?: boolean;
+  error?: string;
+  code?: "invalid_number" | "fetch_failed" | "parse_failed" | "not_found" | "rate_limited";
+}
+
+export async function handleClaimsRequest(
+  body: { patentNumber?: string }
+): Promise<ClaimsResult> {
+  const result = await handlePatentDossierRequest({ patentNumber: body.patentNumber });
+  if (result.error) return { error: result.error, code: result.code };
+  const dossier = result.dossier!;
+  return {
+    patentNumber: dossier.patentNumber,
+    claims: dossier.claims,
+    cached: dossier.cached,
+  };
+}
+
 // ── AI summary ──────────────────────────────────────────────────────────
 
 const SUMMARY_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days — summary is deterministic per dossier

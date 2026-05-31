@@ -10,6 +10,8 @@
 import * as admin from "firebase-admin";
 import {GoogleGenerativeAI} from "@google/generative-ai";
 import crypto from "crypto";
+import {handlePatentDossierRequest} from "./patentDossier";
+import type {OfficeActionAnalysis} from "./officeActionAnalyzer";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -84,7 +86,19 @@ export interface ClaimChartRequest {
 export interface ClaimChartResult {
   chart?: ClaimChart;
   error?: string;
-  code?: "invalid_input" | "ai_failed";
+  code?: "invalid_input" | "ai_failed" | "not_found" | "rate_limited";
+}
+
+// Standalone request: caller provides only the patent number; we fetch the
+// dossier + cached OA analyses ourselves. Used by /v1/claim-chart for MCP
+// callers who don't already have a loaded dossier in memory.
+export interface StandaloneClaimChartRequest {
+  patentNumber?: string;
+  oaDocumentIds?: string[];  // optional filter; default = all cached OAs for this app
+}
+
+export interface StandaloneClaimChartResult extends ClaimChartResult {
+  dossierCacheHit?: boolean;  // false = caller should be billed 3cr for the dossier fetch
 }
 
 // ── Cache ─────────────────────────────────────────────────────────────────
@@ -379,4 +393,65 @@ export async function handleClaimChartRequest(
   });
 
   return {chart};
+}
+
+// Convenience entry point for the MCP `claim_chart` tool and any other caller
+// that has just a patent number. Fetches the dossier (reusing the 24h cache,
+// so this is free on a warm patent) and pulls all cached OA analyses for the
+// application, then delegates to handleClaimChartRequest.
+//
+// The dispatcher uses dossierCacheHit to decide billing: a cold dossier fetch
+// is the 3cr cost, a warm one is free.
+const OA_CACHE_COLLECTION = "officeActionAnalysisCache";
+
+export async function handleStandaloneClaimChartRequest(
+  body: StandaloneClaimChartRequest
+): Promise<StandaloneClaimChartResult> {
+  const patentNumber = (body.patentNumber || "").trim();
+  if (!patentNumber) {
+    return {error: "Missing patentNumber", code: "invalid_input"};
+  }
+
+  const dossierResult = await handlePatentDossierRequest({patentNumber});
+  if (dossierResult.error || !dossierResult.dossier) {
+    const code = dossierResult.code === "not_found" ? "not_found" :
+      dossierResult.code === "rate_limited" ? "rate_limited" :
+      "invalid_input";
+    return {error: dossierResult.error || "Dossier fetch failed", code};
+  }
+
+  const dossier = dossierResult.dossier;
+  const dossierCacheHit = dossier.cached === true;
+  const appNumber = dossier.header.applicationNumber || "";
+
+  // Pull cached OA analyses for this application. No fresh OA analysis is
+  // triggered here — we only use what's already in cache. Callers who want
+  // fresh OA analysis should invoke /v1/oa-analyze first.
+  let oaAnalyses: OaAnalysisInput[] = [];
+  if (appNumber) {
+    const db = admin.firestore();
+    const filterIds = Array.isArray(body.oaDocumentIds) && body.oaDocumentIds.length > 0
+      ? new Set(body.oaDocumentIds)
+      : null;
+    const snap = await db.collection(OA_CACHE_COLLECTION)
+      .where("analysis.applicationNumber", "==", appNumber)
+      .get();
+    oaAnalyses = snap.docs
+      .map((d) => d.data()?.analysis as OfficeActionAnalysis | undefined)
+      .filter((a): a is OfficeActionAnalysis => !!a && (!filterIds || filterIds.has(a.documentId)))
+      .map((a) => ({
+        documentId: a.documentId,
+        mailDate: a.mailDate,
+        rejections: a.rejections,
+        citedArt: a.citedArt,
+      }));
+  }
+
+  const result = await handleClaimChartRequest({
+    patentNumber,
+    claims: dossier.claims.items,
+    oaAnalyses,
+  });
+
+  return {...result, dossierCacheHit};
 }
