@@ -80,6 +80,9 @@ Studio (now "Rapid", Nokia-owned) entry point = **"Add API Project"** (upper-rig
   - **Paid:** larger monthly Credits + per-Credit overage.
 - Reference costs already in the spec: `/dossier` 50, `/challenges` `/litigation` `/company-litigation` 35, enrichment 10, free utilities 0.
 
+### Step 5.5 — README (Docs / About tab)
+When prompted to "Add a README", paste the full content of **`rapidapi-readme.md`** (this folder) — it's the public-facing listing front page: highlights, the 17-endpoint catalog with Credit costs, request/response examples, coverage, and billing notes.
+
 ### Step 6 — Listing details (Hub Listing → General) — confirmed fields 2026-05-31
 Most of this imports from the spec; fill / verify on the General page:
 - **Category** = `Tools` (set if the dropdown is empty).
