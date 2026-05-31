@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>30-Second Patent Due Diligence — AI Patent Search Generator API</title>
+<meta name="description" content="Vet any US patent in one workflow: dossier + PTAB challenges + litigation + legal status = an instant risk profile.">
+<link rel="icon" type="image/png" href="./extension-src/icons/icon32.png">
+<style>
+  :root { --blue:#3B82F6; --ink:#0f172a; --slate:#475569; --bg:#f8fafc; --line:#e2e8f0; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; color:var(--ink); background:var(--bg); line-height:1.55; }
+  .wrap { max-width:880px; margin:0 auto; padding:0 22px; }
+  header.top { background:#0b1220; color:#fff; padding:26px 0 22px; }
+  .brand { display:flex; align-items:center; gap:12px; }
+  .brand img { width:36px; height:36px; border-radius:8px; }
+  .brand b { font-size:15px; }
+  .tag { display:inline-block; margin-top:16px; font-size:11px; letter-spacing:2.5px; color:#93c5fd; font-weight:700; }
+  h1 { font-size:30px; line-height:1.2; margin:6px 0 10px; }
+  .lead { font-size:16px; color:#cbd5e1; max-width:680px; }
+  .rule { height:4px; background:linear-gradient(90deg,var(--blue),#1d4ed8); }
+  section { padding:30px 0; }
+  h2 { font-size:20px; margin:0 0 14px; }
+  .step { display:flex; gap:14px; background:#fff; border:1px solid var(--line); border-radius:12px; padding:15px 18px; margin-bottom:11px; }
+  .step .n { flex:0 0 30px; height:30px; border-radius:50%; background:#eff6ff; color:var(--blue); font-weight:700; display:flex; align-items:center; justify-content:center; }
+  .step .b { font-size:14px; color:var(--slate); }
+  .step .b b { color:var(--ink); }
+  .step .b code { font-family:Consolas,monospace; font-size:12.5px; color:var(--blue); background:#eff6ff; padding:1px 6px; border-radius:5px; }
+  .example { background:#0b1220; color:#e2e8f0; border-radius:12px; padding:22px; }
+  .example h2 { color:#fff; }
+  table { width:100%; border-collapse:collapse; margin-top:6px; font-size:14px; }
+  td { padding:8px 6px; border-bottom:1px solid #1e293b; }
+  td.q { color:#93c5fd; font-weight:600; white-space:nowrap; width:34%; }
+  td.a b { color:#fff; }
+  .verdict { margin-top:14px; font-size:14px; color:#cbd5e1; }
+  .cta { display:inline-block; margin-top:6px; background:var(--blue); color:#fff; text-decoration:none; font-weight:600; font-size:14px; padding:11px 20px; border-radius:9px; }
+  footer { border-top:1px solid var(--line); padding:22px 0; font-size:12.5px; color:var(--slate); display:flex; flex-wrap:wrap; gap:8px; }
+  footer a { color:var(--blue); text-decoration:none; }
+  footer .sp { margin-left:auto; }
+  @media(max-width:680px){ h1{font-size:24px;} td.q{white-space:normal;} }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="brand"><img src="./extension-src/icons/icon128.png" alt=""><b>AI Patent Search Generator</b></div>
+    <div class="tag">USE CASE · DUE DILIGENCE</div>
+    <h1>Vet a patent in 30 seconds</h1>
+    <p class="lead">Before you license, acquire, design around, or assert a US patent, four calls answer the questions that matter — keyed off a single patent number.</p>
+  </div>
+</header>
+<div class="rule"></div>
+
+<div class="wrap">
+  <section>
+    <h2>The recipe</h2>
+    <div class="step"><div class="n">1</div><div class="b"><b>What is it?</b> — <code>/v1/dossier</code> returns the full picture: claims, citations, family, CPC, current assignee.</div></div>
+    <div class="step"><div class="n">2</div><div class="b"><b>Is it valid?</b> — <code>/v1/challenges</code> shows whether anyone attacked it at the PTAB, and whether it survived.</div></div>
+    <div class="step"><div class="n">3</div><div class="b"><b>Is it litigious?</b> — <code>/v1/litigation</code> shows who's been sued over it, where, and over what.</div></div>
+    <div class="step"><div class="n">4</div><div class="b"><b>Is it alive?</b> — <code>/v1/legal-status</code> confirms it's in force with maintenance fees current (and when it expires).</div></div>
+  </section>
+
+  <section>
+    <div class="example">
+      <h2>Worked example — US&nbsp;8,724,622 (Uniloc)</h2>
+      <table>
+        <tr><td class="q">What is it?</td><td class="a">A software-licensing patent owned by <b>Uniloc 2017 LLC</b>.</td></tr>
+        <tr><td class="q">Is it valid?</td><td class="a"><b>15 PTAB challenges</b> by Microsoft &amp; Apple — most <b>denied institution</b>. It has <b>survived</b> repeated attacks.</td></tr>
+        <tr><td class="q">Is it litigious?</td><td class="a"><b>31 district-court suits</b> — Uniloc sued <b>Microsoft, Amazon, Kik</b> and others.</td></tr>
+        <tr><td class="q">Is it alive?</td><td class="a"><b>In force</b>, maintenance fees current.</td></tr>
+      </table>
+      <p class="verdict">Verdict in seconds: a <b style="color:#fff">battle-tested, heavily-asserted</b> patent held by a known NPE — exactly the risk signal a licensing or FTO team needs before acting.</p>
+    </div>
+  </section>
+
+  <section>
+    <p style="font-size:14px;color:var(--slate);">Add <code style="font-family:Consolas,monospace;color:var(--blue);">/v1/assignments</code> for chain of title and <code style="font-family:Consolas,monospace;color:var(--blue);">/v1/company-litigation</code> to profile the owner's entire litigation footprint.</p>
+    <p style="margin-top:18px;"><a class="cta" href="./developers.html">Explore all 17 endpoints →</a></p>
+  </section>
+
+  <footer>
+    <span>AI Patent Search Generator — USPTO patent intelligence API</span>
+    <span class="sp"><a href="./legal-intelligence.html">Legal intelligence</a> · <a href="./developers.html">Developers</a></span>
+  </footer>
+</div>
+</body>
+</html>

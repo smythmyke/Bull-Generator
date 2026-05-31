@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Patent Legal Intelligence — AI Patent Search Generator API</title>
+<meta name="description" content="PTAB validity challenges, district-court litigation history, and company-litigation reverse lookup for US patents — from USPTO public data.">
+<link rel="icon" type="image/png" href="./extension-src/icons/icon32.png">
+<style>
+  :root { --blue:#3B82F6; --ink:#0f172a; --slate:#475569; --bg:#f8fafc; --line:#e2e8f0; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; color:var(--ink); background:var(--bg); line-height:1.55; }
+  .wrap { max-width:880px; margin:0 auto; padding:0 22px; }
+  header.top { background:#0b1220; color:#fff; padding:26px 0 22px; }
+  .brand { display:flex; align-items:center; gap:12px; }
+  .brand img { width:36px; height:36px; border-radius:8px; }
+  .brand b { font-size:15px; letter-spacing:.2px; }
+  .tag { display:inline-block; margin-top:16px; font-size:11px; letter-spacing:2.5px; color:#93c5fd; font-weight:700; }
+  h1 { font-size:30px; line-height:1.2; margin:6px 0 10px; }
+  .lead { font-size:16px; color:#cbd5e1; max-width:680px; }
+  .rule { height:4px; background:linear-gradient(90deg,var(--blue),#1d4ed8); }
+  section { padding:30px 0; }
+  h2 { font-size:20px; margin:0 0 14px; }
+  .cards { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .card .ic { font-size:22px; }
+  .card h3 { font-size:15px; margin:8px 0 5px; }
+  .card p { font-size:13.5px; color:var(--slate); }
+  .card .ep { display:inline-block; margin-top:9px; font-family:Consolas,monospace; font-size:12px; color:var(--blue); background:#eff6ff; padding:2px 7px; border-radius:5px; }
+  .how { background:#fff; border:1px solid var(--line); border-radius:12px; padding:20px; }
+  .how li { margin:0 0 9px 20px; font-size:14px; color:var(--slate); }
+  .how b { color:var(--ink); }
+  .example { background:#0b1220; color:#e2e8f0; border-radius:12px; padding:20px 22px; }
+  .example h2 { color:#fff; }
+  .example .row { font-size:14px; margin:7px 0; }
+  .example .k { color:#93c5fd; font-weight:600; }
+  .note { font-size:13px; color:var(--slate); background:#fffbeb; border:1px solid #fde68a; border-radius:10px; padding:13px 16px; }
+  .cta { display:inline-block; margin-top:6px; background:var(--blue); color:#fff; text-decoration:none; font-weight:600; font-size:14px; padding:11px 20px; border-radius:9px; }
+  footer { border-top:1px solid var(--line); padding:22px 0; font-size:12.5px; color:var(--slate); display:flex; flex-wrap:wrap; gap:8px; }
+  footer a { color:var(--blue); text-decoration:none; }
+  footer .sp { margin-left:auto; }
+  @media(max-width:680px){ .cards{grid-template-columns:1fr;} h1{font-size:24px;} }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="brand"><img src="./extension-src/icons/icon128.png" alt=""><b>AI Patent Search Generator</b></div>
+    <div class="tag">LEGAL INTELLIGENCE</div>
+    <h1>The legal layer most patent APIs don't have</h1>
+    <p class="lead">Beyond the dossier: find out whether a US patent has been <b style="color:#fff">attacked</b>, whether it <b style="color:#fff">survived</b>, and <b style="color:#fff">who's been sued</b> over it — all from USPTO public-domain data.</p>
+  </div>
+</header>
+<div class="rule"></div>
+
+<div class="wrap">
+  <section>
+    <div class="cards">
+      <div class="card">
+        <div class="ic">⚖️</div>
+        <h3>PTAB validity challenges</h3>
+        <p>Every IPR/PGR/CBM filed against a patent — petitioner, owner, counsel, dates, and the outcome (survived, decided, or settled).</p>
+        <span class="ep">/v1/challenges</span>
+      </div>
+      <div class="card">
+        <div class="ic">🏛️</div>
+        <h3>District-court litigation</h3>
+        <p>Who sued whom over the patent, in which court, over what cause of action, with filing dates.</p>
+        <span class="ep">/v1/litigation</span>
+      </div>
+      <div class="card">
+        <div class="ic">🔁</div>
+        <h3>Company reverse lookup</h3>
+        <p>Flip it around: every patent suit a company has been involved in, as plaintiff or defendant.</p>
+        <span class="ep">/v1/company-litigation</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>How it works</h2>
+    <div class="how">
+      <ul>
+        <li><b>Validity challenges</b> come from the USPTO PTAB Trials API — current, structured, with the petitioner vs. owner and the trial outcome.</li>
+        <li><b>Infringement litigation</b> comes from the USPTO Patent Litigation Dataset (district-court dockets), pre-indexed for instant per-patent and per-company lookups.</li>
+        <li><b>Ownership & status</b> (chain of title, in-force, term) come from the USPTO Open Data Portal.</li>
+        <li>Everything keys off a <b>US patent number</b> (or a company name for the reverse lookup). No scraping, no proprietary black box — public-record data you can stand behind.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <div class="example">
+      <h2>Example — US&nbsp;8,724,622</h2>
+      <div class="row"><span class="k">challenges →</span> 15 PTAB IPRs. Microsoft and Apple both challenged it; most were <b>denied institution</b> — the patent <b>survived</b>.</div>
+      <div class="row"><span class="k">litigation →</span> 31 district-court suits. Uniloc sued <b>Microsoft, Amazon, and Kik</b> over it.</div>
+      <div class="row"><span class="k">legal-status →</span> in force, maintenance fees current.</div>
+      <div class="row" style="margin-top:12px;color:#cbd5e1;">One patent number → a complete picture of how battle-tested and litigious it is.</div>
+    </div>
+  </section>
+
+  <section>
+    <p class="note"><b>Coverage:</b> US patents only. PTAB, ownership, and prosecution data are current; district-court litigation is comprehensive for 2003–2016 and partial through 2020. Factual public-record reporting — not legal advice.</p>
+    <p style="margin-top:18px;"><a class="cta" href="./developers.html">See the full API →</a></p>
+  </section>
+
+  <footer>
+    <span>AI Patent Search Generator — USPTO patent intelligence API</span>
+    <span class="sp"><a href="./developers.html">Developers</a> · <a href="https://github.com/smythmyke/patent-search-mcp-server">MCP server</a></span>
+  </footer>
+</div>
+</body>
+</html>

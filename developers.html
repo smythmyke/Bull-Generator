@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Developers — AI Patent Search Generator API &amp; MCP Server</title>
+<meta name="description" content="US patent intelligence API: 17 REST endpoints on RapidAPI, plus a 24-tool MCP server for AI agents. USPTO public data.">
+<link rel="icon" type="image/png" href="./extension-src/icons/icon32.png">
+<style>
+  :root { --blue:#3B82F6; --ink:#0f172a; --slate:#475569; --bg:#f8fafc; --line:#e2e8f0; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; color:var(--ink); background:var(--bg); line-height:1.55; }
+  .wrap { max-width:920px; margin:0 auto; padding:0 22px; }
+  header.top { background:#0b1220; color:#fff; padding:26px 0 22px; }
+  .brand { display:flex; align-items:center; gap:12px; }
+  .brand img { width:36px; height:36px; border-radius:8px; }
+  .brand b { font-size:15px; }
+  .tag { display:inline-block; margin-top:16px; font-size:11px; letter-spacing:2.5px; color:#93c5fd; font-weight:700; }
+  h1 { font-size:30px; line-height:1.2; margin:6px 0 10px; }
+  .lead { font-size:16px; color:#cbd5e1; max-width:700px; }
+  .rule { height:4px; background:linear-gradient(90deg,var(--blue),#1d4ed8); }
+  section { padding:30px 0; }
+  h2 { font-size:21px; margin:0 0 6px; }
+  .sub { color:var(--slate); font-size:14px; margin-bottom:16px; }
+  .twocol { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  .panel { background:#fff; border:1px solid var(--line); border-radius:12px; padding:20px; }
+  .panel h3 { font-size:16px; margin:0 0 8px; }
+  .panel p { font-size:13.5px; color:var(--slate); margin-bottom:10px; }
+  pre { background:#0b1220; color:#e2e8f0; border-radius:9px; padding:12px 14px; font-size:12.5px; overflow-x:auto; font-family:Consolas,monospace; }
+  .btn { display:inline-block; background:var(--blue); color:#fff; text-decoration:none; font-weight:600; font-size:13.5px; padding:9px 16px; border-radius:8px; margin-top:4px; }
+  .btn.alt { background:#0b1220; }
+  .grp { margin-top:18px; }
+  .grp h4 { font-size:13px; letter-spacing:1.5px; color:var(--blue); text-transform:uppercase; margin-bottom:8px; }
+  table { width:100%; border-collapse:collapse; font-size:13.5px; }
+  td { padding:6px 6px; border-bottom:1px solid var(--line); }
+  td.e { font-family:Consolas,monospace; color:var(--blue); white-space:nowrap; }
+  td.c { text-align:right; color:var(--slate); white-space:nowrap; }
+  footer { border-top:1px solid var(--line); padding:22px 0; font-size:12.5px; color:var(--slate); display:flex; flex-wrap:wrap; gap:8px; }
+  footer a { color:var(--blue); text-decoration:none; }
+  footer .sp { margin-left:auto; }
+  @media(max-width:680px){ .twocol{grid-template-columns:1fr;} h1{font-size:24px;} }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="brand"><img src="./extension-src/icons/icon128.png" alt=""><b>AI Patent Search Generator</b></div>
+    <div class="tag">FOR DEVELOPERS</div>
+    <h1>US patent intelligence, two ways</h1>
+    <p class="lead">A REST API on the RapidAPI marketplace, and a 24-tool MCP server for AI agents — both serving dossiers, prosecution, and a legal-intelligence layer from USPTO public data.</p>
+  </div>
+</header>
+<div class="rule"></div>
+
+<div class="wrap">
+  <section>
+    <div class="twocol">
+      <div class="panel">
+        <h3>🔌 REST API (RapidAPI)</h3>
+        <p>17 endpoints, metered in Credits, with a free tier. POST a US patent number and go.</p>
+        <pre>curl -X POST '.../v1/challenges' \
+  -H 'X-RapidAPI-Key: KEY' \
+  -d '{"patentNumber":"US8724622B2"}'</pre>
+        <a class="btn" href="https://rapidapi.com/smythmyke-_s0XzSEDtjw/api/ai-patent-search-generator">View on RapidAPI →</a>
+      </div>
+      <div class="panel">
+        <h3>🤖 MCP Server (AI agents)</h3>
+        <p>24 tools for Claude, Cursor, and any MCP client. On npm and the official MCP Registry.</p>
+        <pre>npx patent-search-mcp-server
+# env: PATENT_SEARCH_API_KEY=psg_live_...</pre>
+        <a class="btn alt" href="https://github.com/smythmyke/patent-search-mcp-server">MCP server on GitHub →</a>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Endpoints</h2>
+    <p class="sub">Costs in RapidAPI Credits (1 Credit ≈ $0.01). Free endpoints cost 0.</p>
+
+    <div class="grp">
+      <h4>Patent</h4>
+      <table>
+        <tr><td class="e">/v1/dossier</td><td>Full dossier — biblio, claims, citations, family, CPC</td><td class="c">50</td></tr>
+        <tr><td class="e">/v1/claims</td><td>Claims tree</td><td class="c">10</td></tr>
+        <tr><td class="e">/v1/citations</td><td>Backward citations</td><td class="c">free</td></tr>
+        <tr><td class="e">/v1/family</td><td>US family / continuity</td><td class="c">free</td></tr>
+        <tr><td class="e">/v1/examiner-stats</td><td>Examiner, art unit, allowance rate</td><td class="c">free</td></tr>
+        <tr><td class="e">/v1/oa-analyze</td><td>AI Office Action analysis</td><td class="c">25</td></tr>
+      </table>
+    </div>
+
+    <div class="grp">
+      <h4>Legal Intelligence</h4>
+      <table>
+        <tr><td class="e">/v1/challenges</td><td>PTAB validity challenges + outcome</td><td class="c">35</td></tr>
+        <tr><td class="e">/v1/litigation</td><td>District-court infringement suits</td><td class="c">35</td></tr>
+        <tr><td class="e">/v1/company-litigation</td><td>Reverse lookup — suits by company</td><td class="c">35</td></tr>
+        <tr><td class="e">/v1/legal-status</td><td>In-force + maintenance history</td><td class="c">10</td></tr>
+        <tr><td class="e">/v1/assignments</td><td>Chain of title</td><td class="c">10</td></tr>
+      </table>
+    </div>
+
+    <div class="grp">
+      <h4>Enrichment</h4>
+      <table>
+        <tr><td class="e">/v1/term</td><td>Patent Term Adjustment + expiration</td><td class="c">10</td></tr>
+        <tr><td class="e">/v1/prosecution-timeline</td><td>Full USPTO event log</td><td class="c">10</td></tr>
+        <tr><td class="e">/v1/attorney</td><td>Attorneys of record + docket</td><td class="c">10</td></tr>
+        <tr><td class="e">/v1/entity-status</td><td>Small / micro / large entity</td><td class="c">5</td></tr>
+        <tr><td class="e">/v1/pregrant-pub</td><td>As-filed publication</td><td class="c">15</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Coverage</h2>
+    <p class="sub">US patents only. PTAB, prosecution, and ownership data are current; district-court litigation is comprehensive 2003–2016, partial to 2020. All USPTO public-domain data. Not legal advice.</p>
+  </section>
+
+  <footer>
+    <span>AI Patent Search Generator</span>
+    <span class="sp">
+      <a href="./legal-intelligence.html">Legal intelligence</a> ·
+      <a href="./due-diligence.html">Due diligence</a> ·
+      <a href="https://www.npmjs.com/package/patent-search-mcp-server">npm</a> ·
+      <a href="https://github.com/smythmyke/patent-search-mcp-server">GitHub</a>
+    </span>
+  </footer>
+</div>
+</body>
+</html>
