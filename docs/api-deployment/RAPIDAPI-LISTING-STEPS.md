@@ -126,10 +126,21 @@ Most of this imports from the spec; fill / verify on the General page:
 ### Step 7 — Payment
 - **Payment Settings → connect PayPal** (required for payout — your 75%).
 
-### Step 8 — Test, then publish  ← *do together with Claude*
-- Subscribe to your own free plan (View in Hub → Subscribe) → **Endpoints → Test Endpoint** (try `/v1/challenges`).
-- **Apps → Subscriptions & Usage:** Credits used must match the endpoint cost. (No movement on a 200 → quota object name ≠ `Credits`; fix Step 5.)
-- When it passes → **Visibility → Public.**
+### Step 8 — Gateway meter test (§5b), then publish  ← *Claude can run this via curl*
+The most reliable test is a direct gateway curl (skip the confusing Hub playground UI). Subscribe to your own BASIC plan first (View in Hub → it auto-subscribes / Change Plan). Then, using the consumer **X-RapidAPI-Key** + **host** (`<api>.p.rapidapi.com`, both shown on the Hub's playground/MCP page):
+```bash
+curl -s -D - -o /dev/null -X POST 'https://<api>.p.rapidapi.com/v1/challenges' \
+  -H 'X-RapidAPI-Key: <CONSUMER_KEY>' -H 'X-RapidAPI-Host: <api>.p.rapidapi.com' \
+  -H 'Content-Type: application/json' -d '{"patentNumber":"US8724622B2"}'
+```
+**Read the response headers — this is the real diagnostic:**
+- `Server: RapidAPI-...` → confirms it went through the gateway (not direct).
+- ✅ PASS: an **`X-RateLimit-Credits-Remaining`** header that dropped by the endpoint cost (e.g. 250 → 215 for a 35-Credit call).
+- ❌ FAIL: headers show `X-RateLimit-Requests-*` and `...rapid-free-plans-hard-limit-*` but **NO `X-RateLimit-Credits-*`** → the `Credits` object isn't active on the subscribed plan. **Fix:** Monetize → the plan's **Credits** row must have a saved Quota Limit (clear any "Error in plan configuration" toast — every object row needs a value). Re-test.
+
+*(Patent-search 2026-05-31: first §5b run returned 200 + data but NO Credits header — BASIC's Credits quota hadn't saved past the error toast. Caught before going public.)*
+
+- When `X-RateLimit-Credits-Remaining` moves correctly → **Visibility → Public.**
 
 ---
 
