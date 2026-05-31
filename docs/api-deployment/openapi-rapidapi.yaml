@@ -1,0 +1,154 @@
+openapi: 3.0.3
+info:
+  title: AI Patent Search Generator API
+  version: "1.0.0"
+  description: >
+    US patent intelligence: dossiers, prosecution, claims, citations, plus a
+    legal-intelligence layer — PTAB validity challenges, district-court
+    litigation history, and company-litigation reverse lookup — sourced from
+    USPTO public data.
+
+
+    Metering: each call is billed against the `Credits` quota via the
+    `X-RapidAPI-Billing` response header (1 Credit = $0.01 of list value). Each
+    endpoint's cost is in its summary. Failed requests (>=500) and bad input
+    (4xx) are not billed.
+  contact:
+    url: https://chromewebstore.google.com/
+servers:
+  # Direct Cloud Function URL (NOT Firebase Hosting — avoids the 60s edge timeout).
+  - url: https://us-central1-solicitation-matcher-extension.cloudfunctions.net/ai
+tags:
+  - name: Patent
+    description: Core patent data
+  - name: Legal Intelligence
+    description: Challenges, litigation, ownership
+  - name: Account
+    description: Probe & balance
+
+paths:
+  /v1/dossier:
+    post:
+      tags: [Patent]
+      summary: Full patent dossier — biblio, claims, citations, family, CPC (50 Credits)
+      operationId: dossier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PatentNumberBody' }
+            example: { patentNumber: "US10000000B2" }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/DataEnvelope' } } } }
+        '404': { description: Patent not found }
+
+  /v1/claims:
+    post:
+      tags: [Patent]
+      summary: Claims-only slice for a patent (10 Credits)
+      operationId: claims
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/PatentNumberBody' }, example: { patentNumber: "US10000000B2" } } }
+      responses: { '200': { description: OK } }
+
+  /v1/citations:
+    post:
+      tags: [Patent]
+      summary: Backward citations for a patent (free)
+      operationId: citations
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/PatentNumberBody' }, example: { patentNumber: "US10000000B2" } } }
+      responses: { '200': { description: OK } }
+
+  /v1/legal-status:
+    post:
+      tags: [Legal Intelligence]
+      summary: In-force vs lapsed/expired + maintenance history (10 Credits)
+      operationId: legalStatus
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/PatentNumberBody' }, example: { patentNumber: "US10000000B2" } } }
+      responses: { '200': { description: OK } }
+
+  /v1/assignments:
+    post:
+      tags: [Legal Intelligence]
+      summary: Chain of title — recorded assignments / conveyances (10 Credits)
+      operationId: assignments
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/PatentNumberBody' }, example: { patentNumber: "US10000000B2" } } }
+      responses: { '200': { description: OK } }
+
+  /v1/challenges:
+    post:
+      tags: [Legal Intelligence]
+      summary: PTAB validity challenges — petitioner, type, outcome (35 Credits)
+      operationId: challenges
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/PatentNumberBody' }, example: { patentNumber: "US8724622B2" } } }
+      responses: { '200': { description: OK } }
+
+  /v1/litigation:
+    post:
+      tags: [Legal Intelligence]
+      summary: US district-court infringement suits for a patent (35 Credits)
+      operationId: litigation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: '#/components/schemas/PatentNumberBody' }
+                - type: object
+                  properties: { limit: { type: integer, description: Max cases } }
+            example: { patentNumber: "US8724622B2", limit: 25 }
+      responses: { '200': { description: OK } }
+
+  /v1/company-litigation:
+    post:
+      tags: [Legal Intelligence]
+      summary: Reverse lookup — all patent suits involving a company (35 Credits)
+      operationId: companyLitigation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [company]
+              properties:
+                company: { type: string, description: Company name }
+                limit: { type: integer }
+              additionalProperties: false
+            example: { company: "Apple", limit: 25 }
+      responses: { '200': { description: OK } }
+
+  /v1/examiner-stats:
+    post:
+      tags: [Patent]
+      summary: Examiner name, art unit, allowance rate (free probe)
+      operationId: examinerStats
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/PatentNumberBody' }, example: { patentNumber: "US10000000B2" } } }
+      responses: { '200': { description: OK } }
+
+components:
+  schemas:
+    PatentNumberBody:
+      type: object
+      required: [patentNumber]
+      properties:
+        patentNumber:
+          type: string
+          description: US patent publication number (e.g. US10000000B2).
+      additionalProperties: false
+    DataEnvelope:
+      type: object
+      properties:
+        data: { type: object, description: The endpoint payload. }

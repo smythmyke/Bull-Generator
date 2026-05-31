@@ -7,7 +7,7 @@ export const API_KEY_PREFIX = "psg_live_";
 export const API_KEY_TEST_PREFIX = "psg_test_";
 const API_KEY_RANDOM_BYTES = 32;
 
-export type AuthSource = "firebase" | "apikey";
+export type AuthSource = "firebase" | "apikey" | "rapidapi";
 
 export interface AuthContext {
   uid: string;
@@ -172,6 +172,8 @@ export function resolvePlatformSource(
   req: { headers: { "user-agent"?: string | string[] } },
   clientHint?: unknown
 ): PlatformSource {
+  if (ctx.source === "rapidapi") return "rapidapi";
+
   if (ctx.source === "apikey") {
     const uaHeader = req.headers["user-agent"];
     const ua = (Array.isArray(uaHeader) ? uaHeader[0] : uaHeader) ?? "";

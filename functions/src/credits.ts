@@ -34,10 +34,12 @@ const STARTER_CREDITS = 5;
 export const FREE_ENDPOINTS = new Set(["/synonyms", "/definitions", "/enrich-npl", "/extract-concepts", "/generate-from-concepts", "/rank", "/analyze-round", "/optimize-query"]);
 
 // Surface a request came from. Server-authoritative — see auth.resolvePlatformSource().
-export type PlatformSource = "extension" | "website" | "mcp" | "api" | "slack";
+// "rapidapi" = proxied through the RapidAPI marketplace gateway (billing-exempt
+// house account; RapidAPI is the ledger for that surface).
+export type PlatformSource = "extension" | "website" | "mcp" | "api" | "slack" | "rapidapi";
 
 const PLATFORM_SOURCES: ReadonlySet<PlatformSource> = new Set([
-  "extension", "website", "mcp", "api", "slack",
+  "extension", "website", "mcp", "api", "slack", "rapidapi",
 ]);
 
 /**
@@ -59,6 +61,7 @@ const PLATFORM_COUNTER_FIELD: Record<PlatformSource, string> = {
   mcp: "usedFromMcp",
   api: "usedFromApi",
   slack: "usedFromSlack",
+  rapidapi: "usedFromRapidApi",
 };
 
 export interface SubscriptionData {
@@ -85,6 +88,12 @@ interface CreditDoc {
   usedFromApi?: number;
   /** First-touch source — the surface that triggered this user's credit doc creation. Never overwritten. */
   signupSource?: PlatformSource;
+  /**
+   * When true, this account's calls skip credit deduction (e.g. the RapidAPI
+   * "house" account, where RapidAPI is the ledger and bills its own
+   * subscribers). Distinct from admin so RapidAPI usage stays attributable.
+   */
+  billingExempt?: boolean;
   subscription: SubscriptionData | null;
   stripeCustomerId?: string;
   createdAt: FirebaseFirestore.FieldValue;
@@ -238,6 +247,12 @@ export async function useCredit(
     const subCredits = data.subscriptionCredits || 0;
     const topCredits = data.topupCredits ?? data.balance ?? 0;
     const total = subCredits + topCredits;
+
+    // Billing-exempt accounts (the RapidAPI house account) skip deduction —
+    // RapidAPI meters + bills those calls itself. No balance check, no decrement.
+    if (data.billingExempt === true) {
+      return { remaining: total };
+    }
 
     if (total < amount) {
       throw new functions.https.HttpsError(

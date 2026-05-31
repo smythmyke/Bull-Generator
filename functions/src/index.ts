@@ -26,6 +26,7 @@ import {handleChallengesRequest} from "./odp/ptab";
 import {handleLegalStatusRequest} from "./odp/legalStatus";
 import {handleAssignmentsRequest} from "./odp/assignments";
 import {handleLitigationRequest, handleCompanyLitigationRequest} from "./litigation";
+import {tryResolveRapidApi, applyRapidApiBilling} from "./rapidapi";
 import {
   handleTermRequest,
   handleProsecutionTimelineRequest,
@@ -88,6 +89,9 @@ function checkInMemoryRateLimit(userId: string): boolean {
 async function checkRateLimitFor(
   ctx: AuthContext
 ): Promise<{ retryAfterSeconds: number } | null> {
+  // RapidAPI enforces per-plan limits at its gateway; our shared house account
+  // must not be throttled collectively. Skip the internal limiter for it.
+  if (ctx.source === "rapidapi") return null;
   if (ctx.source === "apikey" && ctx.keyId) {
     const result = await checkApiKeyRateLimit(ctx.keyId);
     if (!result.allowed) {
@@ -212,7 +216,17 @@ export const ai = functions
     let ctx: AuthContext | null = null;
 
     try {
-      ctx = await resolveAuth(req);
+      // RapidAPI marketplace gateway (Door 1): if the request carries a valid
+      // X-RapidAPI-Proxy-Secret, bind the billing-exempt house account and emit
+      // the per-call billing header. Absent → normal auth (Door 2: extension /
+      // direct API / MCP). Invalid secret → 401 (thrown, handled below).
+      const house = tryResolveRapidApi(req);
+      if (house) {
+        ctx = { uid: house.uid, email: null, source: "rapidapi", scopes: ["*"] };
+        applyRapidApiBilling(res, normalizePath(req.path));
+      } else {
+        ctx = await resolveAuth(req);
+      }
       const decodedToken = asDecodedIdToken(ctx);
       const path = normalizePath(req.path);
 
@@ -236,7 +250,9 @@ export const ai = functions
       // extension (Firebase token) keeps the existing Google Patents path,
       // byte-for-byte unchanged. The dossier-family handlers share an identical
       // result contract, so the dispatch blocks below are source-agnostic.
-      const useOdp = ctx.source === "apikey";
+      // API-key, MCP, and RapidAPI callers are served from USPTO ODP (clean,
+      // RapidAPI-safe). Only the extension's Firebase-token path uses Google Patents.
+      const useOdp = ctx.source !== "firebase";
       const dossierHandler = useOdp ? handleOdpDossierRequest : handlePatentDossierRequest;
       const similarHandler = useOdp ? handleOdpSimilarRequest : handleSimilarRequest;
       const citationsHandler = useOdp ? handleOdpCitationsRequest : handleCitationsRequest;
