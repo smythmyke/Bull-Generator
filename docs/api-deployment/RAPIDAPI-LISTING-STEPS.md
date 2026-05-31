@@ -75,17 +75,39 @@ Tab name in the sidebar is **Gateway** (under the API project, not the top "Secu
 - **Request Size Limit** — leave 0. **Authorization / Secret Headers / Transformations** — leave empty.
 - **→ Send the proxy secret to Claude** (paste here, OR set it in `functions/.env` yourself and say "done"). Claude swaps the temp test secret, redeploys, and re-verifies §5a. (Until then, live gateway calls 401.)
 
-### Step 5 — Monetize (Hub Listing → Monetize → Public Plans) — confirmed 2026-05-31
-The page ships with default objects (Requests, Rapid-free-plans-hard-limit, Bandwidth Platform Fee) and 4 plan templates (BASIC/PRO/ULTRA/MEGA, all toggled off). You must ADD the `Credits` object.
+### Step 5 — Monetize (Hub Listing → Monetize → Public Plans) — confirmed + priced 2026-05-31
+Page ships with default objects (Requests, Rapid-free-plans-hard-limit, Bandwidth Platform Fee) + 4 plan templates (BASIC/PRO/ULTRA/MEGA, off). Each plan has **TWO dialogs**: the **object quota** ("PLAN / Credits") and the **plan-level settings** ("PLAN").
 
-1. **+ Add Object → name EXACTLY `Credits`** (must match the `X-RapidAPI-Billing: Credits=` header, or metering silently does nothing). **Associated Endpoints = All endpoints** (the backend emits a Credits header on every endpoint, 0 for free ones — so don't narrow it).
-2. Toggle ON BASIC + ≥1 paid plan (turn MEGA off). Click the `+`/Edit in each plan's `Credits` row → a "PLAN / Credits" dialog: set **Quota Type = Monthly**, **Quota Limit**, **Limit Type**, **Overages**. Starting proposal (you set the dollars; 1 Credit ≈ $0.01):
-   - **BASIC (free):** Quota Limit **250**, **Hard Limit**, Overages $0. (Free tier MUST be Hard so users can't incur overage; ~5 dossiers / ~7 legal lookups.)
-   - **PRO ~$25/mo:** Quota Limit **5,000**, **Soft Limit**, Overages **$0.008**/Credit.
-   - **ULTRA ~$99/mo:** Quota Limit **30,000**, **Soft Limit**, Overages **$0.005**/Credit.
-   - (Set each paid plan's monthly price in its plan header/Edit.)
-3. Leave Requests / free-hard-limit / Bandwidth defaults alone.
-- Spec cost map: `/dossier` 50, `/oa-analyze` 25, `/challenges` `/litigation` `/company-litigation` 35, `/claims` `/legal-status` `/assignments` `/term` `/prosecution-timeline` `/attorney` 10, `/pregrant-pub` 15, `/entity-status` 5, free utilities 0.
+**5a — Add the Credits object:** **+ Add Object → name EXACTLY `Credits`**, **Associated Endpoints = All endpoints** (backend emits a Credits header on every endpoint, 0 for free — don't narrow it). Must match the `X-RapidAPI-Billing: Credits=` header or metering silently does nothing.
+
+**5b — Per-plan Credits quota** (click the `+` in a plan's Credits row → "PLAN / Credits" dialog): Quota Type = **Monthly**, then:
+
+| Plan | Quota Limit | Limit Type | Overage |
+|---|---|---|---|
+| **BASIC** (free) | **250** | **Hard** | $0 |
+| **PRO** | **5,000** | **Soft** | **$0.008** / Credit |
+| **ULTRA** | **30,000** | **Soft** | **$0.005** / Credit |
+
+(Free MUST be **Hard** so free users can't incur overage. 250 ≈ ~5 dossiers / ~7 legal lookups.)
+
+**5c — Plan-level settings** (Edit a plan header → "PLAN" dialog): Plan Type = **Monthly Subscription**, then:
+
+| Plan | Subscription Price | Recommended? |
+|---|---|---|
+| BASIC | **$0** | no |
+| **PRO** | **$25/mo** | **YES** (sets the Hub badge) |
+| ULTRA | **$99/mo** | no |
+| MEGA | toggle **OFF** | — |
+
+Leave Rate Limit / Require approval unchecked. **RapidAPI keeps 25% → you net ≈ $18.75 (PRO) / $74.25 (ULTRA)** per subscriber/mo.
+
+**5d —** Leave Requests / free-hard-limit / Bandwidth defaults alone.
+
+⚠️ **"Error in plan configuration"** toast = an object on the plan has an empty/0 quota. Ensure every object row under each enabled plan has a value (Credits + Requests set), then re-save.
+
+**Spec cost map (what the backend emits):** `/dossier` 50, `/oa-analyze` 25, `/challenges` `/litigation` `/company-litigation` 35, `/claims` `/legal-status` `/assignments` `/term` `/prosecution-timeline` `/attorney` 10, `/pregrant-pub` 15, `/entity-status` 5, free utilities 0.
+
+**Pricing rationale (RapidAPI vs the extension):** different currencies — a RapidAPI Credit ≈ $0.005–0.01, an extension credit ≈ $0.13–0.45. Per-call dollars land in the same range, RapidAPI slightly cheaper *by design*: it's a self-serve developer channel (raw data integration), loses 25% to the marketplace, and is a discovery play — vs the extension's polished UI for (price-insensitive) patent pros. Legal/litigation endpoints are API-only today, so no extension conflict until `EXT-ODP-1` ships.
 
 ### Step 5.5 — README (Docs / About tab)
 When prompted to "Add a README", paste the full content of **`rapidapi-readme.md`** (this folder) — it's the public-facing listing front page: highlights, the 17-endpoint catalog with Credit costs, request/response examples, coverage, and billing notes.
