@@ -18,11 +18,28 @@
 ### Listing name
 `AI Patent Search Generator`
 
-### Short description (tagline)
+### Short description (tagline) — imports automatically from the spec
 > US patent intelligence from USPTO data — dossiers, prosecution, claims & citations, plus a legal layer: PTAB validity challenges, district-court litigation history, and company-litigation reverse lookup.
 
-### Long description (Docs tab / overview)
-> The AI Patent Search Generator API turns a US patent number into actionable intelligence. Core: full dossiers (bibliographic, claims, citations, family, CPC), prosecution history, and examiner stats. Legal intelligence: PTAB validity challenges (who attacked the patent and whether it survived), US district-court infringement litigation (who sued whom, over what), and a company-litigation reverse lookup (every patent suit involving a company). All from USPTO public-domain data. Metered via the `Credits` quota; failed requests and bad input are not billed.
+### Long description (Markdown — paste into Hub Listing → General → Long Description)
+```markdown
+**US patent intelligence from USPTO public data.** Turn a patent number into a full dossier plus a legal-intelligence layer most patent APIs don't offer.
+
+### Core patent data
+- **Dossier** — bibliographic, full claims, citations, family, and CPC in one call
+- **Claims, citations, family, examiner stats** as standalone calls
+- **Office Action AI analysis**
+
+### Legal intelligence
+- **PTAB validity challenges** — who challenged a patent (IPR/PGR/CBM) and whether it survived
+- **District-court litigation** — who sued whom over a patent, where, and over what
+- **Company-litigation reverse lookup** — every patent suit involving a company
+
+### Enrichment
+In-force/legal status, chain of title, term/PTA, attorneys of record, entity status, and the as-filed pre-grant publication.
+
+US patents only. Litigation coverage comprehensive 2003–2016, partial to 2020; PTAB and prosecution data current. All USPTO public-domain data. Metered via the `Credits` quota — bad input and failures aren't billed. *Not legal advice.*
+```
 
 ---
 
@@ -40,8 +57,8 @@ Studio (now "Rapid", Nokia-owned) entry point = **"Add API Project"** (upper-rig
 - **Add API Project** (upper-right of Studio).
 - **Name:** `AI Patent Search Generator`
 - **Description:** paste the tagline above.
-- **Category:** Data (or Tools / Business).
-- "Import data?" prompt → you may import `openapi-rapidapi.yaml` now, or skip and do it in Step 3.
+- **Category:** `Tools`.
+- **Import data from → OpenAPI** → upload `openapi-rapidapi.yaml`. **CONFIRMED 2026-05-31: this dialog import is the easiest path and pulls in all 17 endpoints + base URL + badges + docs at once** (with the spec's `x-category`/`x-badges`/`x-documentation` + per-endpoint examples). [Equivalent alt: leave "Do not import", create, then import later via Hub Listing → Definitions.]
 
 ### Step 2 — Base URL
 - **Hub Listing → General** → scroll to **Base URL(s)** → paste the **direct Cloud Function URL** above (NOT a Firebase Hosting URL). Confirm it matches if it auto-filled from the import.
@@ -63,8 +80,16 @@ Studio (now "Rapid", Nokia-owned) entry point = **"Add API Project"** (upper-rig
   - **Paid:** larger monthly Credits + per-Credit overage.
 - Reference costs already in the spec: `/dossier` 50, `/challenges` `/litigation` `/company-litigation` 35, enrichment 10, free utilities 0.
 
-### Step 6 — Listing details
-- Logo (≤500px), long description (above), website, terms, tags. **Visibility = Private** for now.
+### Step 6 — Listing details (Hub Listing → General) — confirmed fields 2026-05-31
+Most of this imports from the spec; fill / verify on the General page:
+- **Category** = `Tools` (set if the dropdown is empty).
+- **Short Description** — imported automatically ✓.
+- **Long Description** — paste the Markdown block above (the import only duplicates the short one here).
+- **Logo** — ≤ 500×500 px (512 rejected).
+- **Website / Terms of Use** — optional.
+- **Visibility = Private**, and **tick "I confirm I own or have rights to publish this API"** (required before going public).
+- **Base URL** — auto-filled to `.../ai` ✓. Don't append anything.
+- ⚠️ **Health Check URL** — defaults to `.../ai/ping`, but there is **no `/ping` endpoint** (it would 404 → API shows unhealthy). **CLEAR the field (leave blank).** Optional: ask Claude to add a no-auth `/ping` for a green health badge (small backend change + redeploy).
 
 ### Step 7 — Payment
 - **Payment Settings → connect PayPal** (required for payout — your 75%).
