@@ -267,6 +267,12 @@ core dossier (Phase 3–5) proves reliable.
 
 **Coverage summary:** 8a = validity challenges (precise + current); 8b = infringement suits (precise + historical ≤2020); 8c = infringement suits (live but party-level). Together they give a real "litigation history" view, mostly on public-domain data.
 
+## Reverse lookups (2026-05-31)
+
+**Idea 1 — Company → litigation (`/v1/company-litigation`) — BUILDING.** Second index over the same PTLITIG data: `litigationByParty/{normalizedName}` → suits where the company is plaintiff/defendant, with patents + court + dates + cause. Name handling: normalize (lowercase, strip Inc/Corp/LLC suffixes + punctuation) for the key; prefix-match user input; filter to repeat players (≥2 cases) to cut one-off-defendant noise and focus on entities with a real litigation history. Value: competitive intel / M&A due diligence ("is this target a troll / heavily sued?"). Same 2003-2020 coverage caveat. Reuses `ingest-litigation.js`.
+
+**Idea 2 — Features/keywords → litigation — ROADMAPED (not built).** The PTLITIG data has no technical content, so this can't keyword-match directly. It's a multi-step *workflow*: features → semantic patent search (embeddings over claims/abstracts — its own build, ~W1 Prior Art Hunter) → ∩ litigation join. Belongs with the W-series agents, not a quick endpoint. Added to ROADMAP.
+
 ## Parallel track (stakeholder-driven, optional)
 
 Per the 2026-05-31 decision: stakeholder *may* register an EPO OPS key in parallel "if we see promise" during Phases 0–1. If that key materializes, EPO OPS desk research (Phase 0) upgrades to a live probe (Phase 1-style) and feeds the Phase 2 gate — potentially expanding v1 scope to US+EU. **Not on the critical path.** US-only ships regardless.
