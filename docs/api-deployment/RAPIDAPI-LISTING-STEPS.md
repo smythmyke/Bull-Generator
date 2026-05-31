@@ -78,7 +78,7 @@ Tab name in the sidebar is **Gateway** (under the API project, not the top "Secu
 ### Step 5 — Monetize (Hub Listing → Monetize → Public Plans) — confirmed 2026-05-31
 The page ships with default objects (Requests, Rapid-free-plans-hard-limit, Bandwidth Platform Fee) and 4 plan templates (BASIC/PRO/ULTRA/MEGA, all toggled off). You must ADD the `Credits` object.
 
-1. **+ Add Object → name EXACTLY `Credits`, Type = Quota.** (Must match the `X-RapidAPI-Billing: Credits=` header, or metering silently does nothing.)
+1. **+ Add Object → name EXACTLY `Credits`** (must match the `X-RapidAPI-Billing: Credits=` header, or metering silently does nothing). **Associated Endpoints = All endpoints** (the backend emits a Credits header on every endpoint, 0 for free ones — so don't narrow it).
 2. Toggle ON BASIC + ≥1 paid plan (turn MEGA off). **Edit** each → set its `Credits` quota + price. Starting proposal (you set the dollars; 1 Credit ≈ $0.01):
    - **BASIC (free):** 250 Credits/mo, HARD limit (~5 dossiers / ~7 legal lookups to evaluate).
    - **PRO ~$25/mo:** 5,000 Credits + ~$0.008/Credit overage.
