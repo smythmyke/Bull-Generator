@@ -33,6 +33,34 @@ const STARTER_CREDITS = 5;
 // Endpoints that are free (no credit cost)
 export const FREE_ENDPOINTS = new Set(["/synonyms", "/definitions", "/enrich-npl", "/extract-concepts", "/generate-from-concepts", "/rank", "/analyze-round", "/optimize-query"]);
 
+// Surface a request came from. Server-authoritative — see auth.resolvePlatformSource().
+export type PlatformSource = "extension" | "website" | "mcp" | "api" | "slack";
+
+const PLATFORM_SOURCES: ReadonlySet<PlatformSource> = new Set([
+  "extension", "website", "mcp", "api", "slack",
+]);
+
+/**
+ * Validate an arbitrary value against the PlatformSource union, defaulting
+ * to "extension" for anything unrecognized. Used at trust boundaries (Stripe
+ * webhooks) where we can't fully control what arrives in metadata. We default
+ * to "extension" rather than "website" because the original PatentSearch
+ * checkout surface was the Chrome extension.
+ */
+export function coerceSource(value: unknown): PlatformSource {
+  return typeof value === "string" && PLATFORM_SOURCES.has(value as PlatformSource)
+    ? (value as PlatformSource)
+    : "extension";
+}
+
+const PLATFORM_COUNTER_FIELD: Record<PlatformSource, string> = {
+  extension: "usedFromExtension",
+  website: "usedFromWebsite",
+  mcp: "usedFromMcp",
+  api: "usedFromApi",
+  slack: "usedFromSlack",
+};
+
 export interface SubscriptionData {
   planId: string;
   stripeSubscriptionId: string;
@@ -40,6 +68,7 @@ export interface SubscriptionData {
   status: "active" | "canceled" | "past_due";
   currentPeriodEnd: string; // ISO date
   monthlyAllocation: number;
+  source?: PlatformSource;
 }
 
 interface CreditDoc {
@@ -50,6 +79,12 @@ interface CreditDoc {
   starterCredited?: boolean; // legacy field
   totalPurchased: number;
   totalUsed: number;
+  usedFromExtension?: number;
+  usedFromWebsite?: number;
+  usedFromMcp?: number;
+  usedFromApi?: number;
+  /** First-touch source — the surface that triggered this user's credit doc creation. Never overwritten. */
+  signupSource?: PlatformSource;
   subscription: SubscriptionData | null;
   stripeCustomerId?: string;
   createdAt: FirebaseFirestore.FieldValue;
@@ -128,7 +163,8 @@ export async function getBalance(
 // Initialize credits for a new user — grants starter credits on first sign-in
 export async function initCredits(
   db: FirebaseFirestore.Firestore,
-  uid: string
+  uid: string,
+  signupSource?: PlatformSource
 ): Promise<void> {
   const docRef = db.collection("credits").doc(uid);
 
@@ -141,6 +177,7 @@ export async function initCredits(
         balance: STARTER_CREDITS,
         topupCredits: STARTER_CREDITS,
         freeCreditsGranted: true,
+        ...(signupSource ? {signupSource} : {}),
       });
       return;
     }
@@ -165,6 +202,15 @@ export async function initCredits(
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
     }
+
+    // Backfill signupSource for legacy docs that pre-date this field.
+    // First observed source wins — never overwrite once stamped.
+    if (signupSource && !data.signupSource) {
+      tx.update(docRef, {
+        signupSource,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
   });
 }
 
@@ -173,7 +219,8 @@ export async function useCredit(
   db: FirebaseFirestore.Firestore,
   uid: string,
   action: string,
-  amount: number = 1
+  amount: number = 1,
+  source?: PlatformSource
 ): Promise<{remaining: number}> {
   const docRef = db.collection("credits").doc(uid);
 
@@ -215,11 +262,19 @@ export async function useCredit(
 
     const newBalance = newSub + newTop;
 
+    // Increment the per-source usage counter (only when source is provided).
+    // Tracks how many credits were burned per surface for revenue/usage
+    // attribution in the seller dashboard.
+    const platformCounter = source
+      ? {[PLATFORM_COUNTER_FIELD[source]]: admin.firestore.FieldValue.increment(amount)}
+      : {};
+
     tx.update(docRef, {
       subscriptionCredits: newSub,
       topupCredits: newTop,
       balance: newBalance,
       totalUsed: admin.firestore.FieldValue.increment(amount),
+      ...platformCounter,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
@@ -230,6 +285,7 @@ export async function useCredit(
       amount,
       balanceBefore: total,
       balanceAfter: newBalance,
+      ...(source ? {source} : {}),
       timestamp: admin.firestore.FieldValue.serverTimestamp(),
     });
 
@@ -282,7 +338,7 @@ export interface PurchaseMetadata {
   packId: string;
   packLabel: string;
   amountPaid: number; // cents
-  source?: "extension" | "website";
+  source?: PlatformSource;
 }
 
 // Add purchased credits (top-up packs)
@@ -395,13 +451,13 @@ export async function handleCreditRequest(
       return getBalance(db, user.uid);
 
     case "init":
-      await initCredits(db, user.uid);
+      await initCredits(db, user.uid, coerceSource(body.source));
       return getBalance(db, user.uid);
 
     case "use": {
       const action = (body.action as string) || "search";
       const amount = typeof body.amount === "number" && body.amount >= 1 ? Math.floor(body.amount) : 1;
-      return useCredit(db, user.uid, action, amount);
+      return useCredit(db, user.uid, action, amount, coerceSource(body.source));
     }
 
     case "checkout": {
@@ -410,7 +466,7 @@ export async function handleCreditRequest(
       if (!packId) {
         throw new functions.https.HttpsError("invalid-argument", "packId is required");
       }
-      return createCreditCheckoutSession(user.uid, user.email || "", packId);
+      return createCreditCheckoutSession(user.uid, user.email || "", packId, coerceSource(body.source));
     }
 
     case "refund": {
@@ -447,7 +503,7 @@ export async function handleCreditRequest(
       if (!planId) {
         throw new functions.https.HttpsError("invalid-argument", "planId is required");
       }
-      return createSubscriptionCheckoutSession(user.uid, user.email || "", planId);
+      return createSubscriptionCheckoutSession(user.uid, user.email || "", planId, coerceSource(body.source));
     }
 
     case "subscription/portal": {

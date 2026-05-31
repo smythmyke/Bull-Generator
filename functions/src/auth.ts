@@ -1,6 +1,7 @@
 import * as admin from "firebase-admin";
 import * as functions from "firebase-functions";
 import * as crypto from "crypto";
+import type { PlatformSource } from "./credits";
 
 export const API_KEY_PREFIX = "psg_live_";
 export const API_KEY_TEST_PREFIX = "psg_test_";
@@ -149,4 +150,37 @@ export function requireFirebaseAuth(ctx: AuthContext): void {
 export function hasScope(ctx: AuthContext, scope: string): boolean {
   if (!ctx.scopes) return false;
   return ctx.scopes.includes("*") || ctx.scopes.includes(scope);
+}
+
+const FIREBASE_CLIENT_HINTS: ReadonlySet<PlatformSource> = new Set(["extension", "website"]);
+const MCP_USER_AGENT_PREFIX = "patent-search-mcp-server";
+
+/**
+ * Determine which surface a request came from. Server-authoritative —
+ * clients can supply a `source` hint when calling with a Firebase token (to
+ * distinguish extension vs website), but API-key callers are classified
+ * entirely from auth context + headers so they can't lie about the channel.
+ *
+ *   - API key + User-Agent starts with patent-search-mcp-server → "mcp"
+ *   - API key, no other signal                                  → "api"
+ *   - Firebase token + client hint of "extension" / "website"    → that hint
+ *   - Firebase token, no hint                                    → "extension"
+ *     (PatentSearch's original surface was the Chrome extension)
+ */
+export function resolvePlatformSource(
+  ctx: AuthContext,
+  req: { headers: { "user-agent"?: string | string[] } },
+  clientHint?: unknown
+): PlatformSource {
+  if (ctx.source === "apikey") {
+    const uaHeader = req.headers["user-agent"];
+    const ua = (Array.isArray(uaHeader) ? uaHeader[0] : uaHeader) ?? "";
+    if (ua.toLowerCase().startsWith(MCP_USER_AGENT_PREFIX)) return "mcp";
+    return "api";
+  }
+
+  if (typeof clientHint === "string" && FIREBASE_CLIENT_HINTS.has(clientHint as PlatformSource)) {
+    return clientHint as PlatformSource;
+  }
+  return "extension";
 }
