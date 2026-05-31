@@ -316,21 +316,13 @@ export const ai = functions
         const db = admin.firestore();
         const rl = await checkRateLimitFor(ctx);
         if (rl) { sendRateLimit(res, rl.retryAfterSeconds); return; }
-        // Claim chart fetches its dossier via Google Patents internally. Gate
-        // API/MCP callers until the ODP-backed path lands (PLAN-API-DATA-MIGRATION.md
-        // Phase 4) so no scraped data is served on the marketplace surface.
-        if (useOdp) {
-          res.status(501).json({
-            error: "Claim chart is not yet available on the public API. ODP-backed version is in progress.",
-            code: "not_implemented",
-          });
-          await logApiUsageIfKey(ctx, { isError: true });
-          return;
-        }
         const isStandalone = !Array.isArray((req.body as { claims?: unknown })?.claims) ||
           ((req.body as { claims?: unknown[] }).claims?.length ?? 0) === 0;
         if (isStandalone) {
-          const result = await handleStandaloneClaimChartRequest(req.body);
+          const result = await handleStandaloneClaimChartRequest(
+            req.body,
+            useOdp ? handleOdpDossierRequest : undefined
+          );
           if (result.error) {
             const statusCode = result.code === "invalid_input" ? 400 :
               result.code === "not_found" ? 404 :
@@ -374,18 +366,12 @@ export const ai = functions
       if (path === "/dossier-summary") {
         const rl = await checkRateLimitFor(ctx);
         if (rl) { sendRateLimit(res, rl.retryAfterSeconds); return; }
-        // ODP-backed summary not shipped yet (handler fetches via Google Patents
-        // internally). Gate API/MCP callers rather than serve scraped data on the
-        // marketplace surface. See PLAN-API-DATA-MIGRATION.md Phase 4.
-        if (useOdp) {
-          res.status(501).json({
-            error: "AI summary is not yet available on the public API. Use /v1/dossier (includes abstract, claims, CPC) for now.",
-            code: "not_implemented",
-          });
-          await logApiUsageIfKey(ctx, { isError: true });
-          return;
-        }
-        const result = await handleDossierSummaryRequest(req.body);
+        // API/MCP callers get an ODP-sourced dossier (no Google Patents); the
+        // extension passes undefined and keeps the GP read-through. Phase 4.
+        const result = await handleDossierSummaryRequest(
+          req.body,
+          useOdp ? handleOdpDossierRequest : undefined
+        );
         if (result.error) {
           const statusCode = result.code === "invalid_number" ? 400 :
             result.code === "not_found" ? 404 :

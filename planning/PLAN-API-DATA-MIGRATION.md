@@ -55,8 +55,8 @@ The legal/litigation layer is the headline value: higher-margin, harder to repli
 
 1. ✅ Phase 3 — core ODP dossier (done)
 2. ✅ **Legal Intelligence bundle — BUILT + VERIFIED 2026-05-31.** `/v1/challenges` (PTAB), `/v1/legal-status` (in-force + maintenance history), `/v1/assignments` (chain of title). New files `functions/src/odp/{util,ptab,legalStatus,assignments}.ts`; `odpClient` generalized for POST (PTAB) + `eventDataBag`; `odpDossier` refactored onto shared `util`. Free in v1, available to BOTH auth paths (net-new ODP data, additive — no GP involved). Verified: US8724622 → 15 challenges (8 survived/3 settled/4 FWD, Microsoft & Apple v Uniloc); legal-status in-force + maintenance dates; assignments chain of title w/ reel-frame. `tsc` clean. Scopes mapped to `dossier`. **Pricing deferred to Phase 6** (currently free; per-claim PTAB-decision AI-parse is the future premium tier).
-3. Phase 5 — verify extension byte-identical
-4. Phase 4 — un-gate summary / claim-chart / search migration
+3. ✅ Phase 5 — extension verified byte-identical 2026-05-31 (git: `patentDossier.ts`/`claimChart.ts` unchanged in all migration commits; behavioral: GP path still returns full dossier w/ 14 fwd cites + 15 similar for US10000000)
+4. ◐ Phase 4 — summary + claim-chart un-gated onto ODP ✅ 2026-05-31 (additive `fetchDossier` injection; API/MCP pass `handleOdpDossierRequest`, extension omits it → GP read-through unchanged; both verified green). `/v1/search` execution still on Google Patents — remaining.
 5. ✅ Phase 7 — enrichment endpoints (term, timeline, attorney, entity, pregrant) — BUILT + VERIFIED 2026-05-31
 6. Phase 8b/8c — district-court litigation (USPTO dataset ingest, then CourtListener)
 7. Phase 6 — RapidAPI listing + premium pricing anchored on the legal bundle

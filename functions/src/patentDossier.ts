@@ -925,7 +925,10 @@ export interface DossierSummaryResult {
 }
 
 export async function handleDossierSummaryRequest(
-  body: PatentDossierRequest
+  body: PatentDossierRequest,
+  // Additive: API/MCP path injects the ODP dossier source. Omitted by the
+  // extension/Slack callers, which keep the Google Patents read-through below.
+  fetchDossier?: (b: PatentDossierRequest) => Promise<PatentDossierResult>
 ): Promise<DossierSummaryResult> {
   const normalized = normalizePatentNumber(body.patentNumber || "");
   if (!normalized || normalized.length < 5) {
@@ -939,7 +942,23 @@ export async function handleDossierSummaryRequest(
   if (cachedSummary) return { summary: cachedSummary };
 
   // Need the dossier first — pull from cache or fetch fresh
-  let dossier = await readCache(db, normalized);
+  // Acquire the dossier. API/MCP callers inject an ODP fetcher; the extension
+  // (no fetcher) uses the existing Google Patents read-through that follows.
+  let dossier: PatentDossier | null = null;
+  if (fetchDossier) {
+    const fr = await fetchDossier({ patentNumber: normalized });
+    if (fr.error || !fr.dossier) {
+      const code = fr.code === "not_found" ? "not_found"
+        : fr.code === "rate_limited" ? "rate_limited"
+        : fr.code === "invalid_number" ? "invalid_number"
+        : fr.code === "parse_failed" ? "parse_failed"
+        : "fetch_failed";
+      return { error: fr.error || "Dossier fetch failed", code };
+    }
+    dossier = fr.dossier;
+  } else {
+    dossier = await readCache(db, normalized);
+  }
   if (!dossier) {
     let html: string;
     try {

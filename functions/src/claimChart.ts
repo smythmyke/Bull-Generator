@@ -10,7 +10,7 @@
 import * as admin from "firebase-admin";
 import {GoogleGenerativeAI} from "@google/generative-ai";
 import crypto from "crypto";
-import {handlePatentDossierRequest} from "./patentDossier";
+import {handlePatentDossierRequest, type PatentDossierResult} from "./patentDossier";
 import type {OfficeActionAnalysis} from "./officeActionAnalyzer";
 
 // ── Types ─────────────────────────────────────────────────────────────────
@@ -405,14 +405,17 @@ export async function handleClaimChartRequest(
 const OA_CACHE_COLLECTION = "officeActionAnalysisCache";
 
 export async function handleStandaloneClaimChartRequest(
-  body: StandaloneClaimChartRequest
+  body: StandaloneClaimChartRequest,
+  // Additive: lets the API/MCP path inject the ODP dossier source. Defaults to
+  // the Google Patents fetch, so existing callers (extension/Slack) are unchanged.
+  fetchDossier: (b: { patentNumber?: string }) => Promise<PatentDossierResult> = handlePatentDossierRequest
 ): Promise<StandaloneClaimChartResult> {
   const patentNumber = (body.patentNumber || "").trim();
   if (!patentNumber) {
     return {error: "Missing patentNumber", code: "invalid_input"};
   }
 
-  const dossierResult = await handlePatentDossierRequest({patentNumber});
+  const dossierResult = await fetchDossier({patentNumber});
   if (dossierResult.error || !dossierResult.dossier) {
     const code = dossierResult.code === "not_found" ? "not_found" :
       dossierResult.code === "rate_limited" ? "rate_limited" :
