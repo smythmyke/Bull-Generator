@@ -83,6 +83,8 @@ const RAPIDAPI_CREDITS: Readonly<Record<string, number>> = {
   "/attorney": 10,
   "/entity-status": 5,
   "/pregrant-pub": 15,
+  "/legal-bundle": 75,      // all 9 per-patent legal slices in one call
+  "/risk-profile": 90,      // legal-bundle + AI risk verdict (DD-1)
   // similar / citations / family / examiner-stats / prosecution-history / cpc* = 0 (free)
 };
 
