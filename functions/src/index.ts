@@ -622,8 +622,11 @@ export const ai = functions
         const rl = await checkRateLimitFor(ctx);
         if (rl) { sendRateLimit(res, rl.retryAfterSeconds); return; }
         const isExecute = path === "/search-execute";
+        // Only the extension (Firebase token) executes against Google Patents.
+        // API-key / RapidAPI callers get the generated queries to run themselves
+        // — the public surface does not scrape Google.
         const result = isExecute
-          ? await handleSearchExecuteRequest(req.body)
+          ? await handleSearchExecuteRequest(req.body, { execute: ctx.source === "firebase" })
           : await handleSearchQueryRequest(req.body);
         if (result.error) {
           const statusCode = result.code === "invalid_input" ? 400 :

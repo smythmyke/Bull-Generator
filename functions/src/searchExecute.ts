@@ -35,9 +35,17 @@ interface ExecuteResult {
   description?: string;
   strategy?: string;
   concepts?: { name: string; synonyms: string[] }[];
-  queries?: { label: string; query: string; hitCount: number }[];
+  queries?: { label: string; query: string; hitCount?: number }[];
   hits?: SearchHit[];
   totalHits?: number;
+  /**
+   * "server_side" — hits were executed and returned (extension / Firebase path).
+   * "client_side" — the API/MCP marketplace path returns expert Boolean queries
+   *   for the caller to run against their own full-text engine. We do NOT scrape
+   *   Google Patents on the marketplace surface (legal-clean, USPTO-only data).
+   */
+  executionMode?: "server_side" | "client_side";
+  note?: string;
   warnings?: string[];
   error?: string;
   code?: "invalid_input" | "ai_failed" | "fetch_failed" | "rate_limited";
@@ -140,7 +148,13 @@ export async function handleSearchExecuteRequest(body: {
   description?: string;
   strategy?: string;
   limit?: number;
-}): Promise<ExecuteResult> {
+}, opts?: { execute?: boolean }): Promise<ExecuteResult> {
+  // Default true = legacy/extension behavior (execute against Google Patents).
+  // The marketplace (API key / RapidAPI) path passes execute=false: we generate
+  // the expert Boolean queries with our AI but do NOT scrape Google — the caller
+  // runs them against their own full-text engine. Keeps the public surface on
+  // clean, USPTO-only data with zero scraping.
+  const execute = opts?.execute !== false;
   const description = typeof body.description === "string" ? body.description.trim() : "";
   if (!description || description.length < 10) {
     return {
@@ -200,6 +214,27 @@ export async function handleSearchExecuteRequest(body: {
     return { error: `Query generation failed: ${msg}`, code: "ai_failed" };
   }
 
+  // Concept slim-down (shared by both branches)
+  const conceptsSummary = conceptsForStrategy.map((c) => ({ name: c.name, synonyms: c.synonyms }));
+
+  // Marketplace path: return the generated queries without executing them.
+  // We do not scrape Google Patents on the public API/MCP surface.
+  if (!execute) {
+    return {
+      description,
+      strategy,
+      concepts: conceptsSummary,
+      queries: queries.map((q) => ({ label: q.label, query: q.query })),
+      hits: [],
+      totalHits: 0,
+      executionMode: "client_side",
+      note:
+        "Expert Boolean queries generated from your description. Run them against " +
+        "your full-text engine (e.g. Google Patents), or use /v1/query for a single " +
+        "optimized query. Server-side full-text execution from USPTO data is on the roadmap.",
+    };
+  }
+
   // Step 3 — execute the top N queries against Google Patents
   const queriesToRun = queries.slice(0, MAX_QUERIES_TO_EXECUTE);
   const queryResults = await Promise.all(
@@ -222,16 +257,10 @@ export async function handleSearchExecuteRequest(body: {
     }
   }
 
-  // Concept slim-down for the response
-  const conceptsForResponse = conceptsForStrategy.map((c) => ({
-    name: c.name,
-    synonyms: c.synonyms,
-  }));
-
   return {
     description,
     strategy,
-    concepts: conceptsForResponse,
+    concepts: conceptsSummary,
     queries: queriesToRun.map((q, i) => ({
       label: q.label,
       query: q.query,
@@ -239,6 +268,7 @@ export async function handleSearchExecuteRequest(body: {
     })),
     hits: merged.slice(0, limit),
     totalHits: merged.length,
+    executionMode: "server_side",
     ...(warnings.length > 0 ? { warnings } : {}),
   };
 }
