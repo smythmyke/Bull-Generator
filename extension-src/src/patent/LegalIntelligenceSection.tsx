@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   ShieldCheck, ShieldAlert, CalendarClock, Scale, Gavel, FileSignature,
   Clock, UserCheck, Building2, FileText, Loader2, Sparkles,
@@ -32,6 +32,33 @@ const Unavailable: React.FC<{ msg?: string }> = ({ msg }) => (
 function fmtDate(d?: string): string {
   if (!d) return '—';
   return d.length >= 10 ? d.slice(0, 10) : d;
+}
+
+// Shows the first `initial` items; "…and N more" expands the full list in place
+// (with "Show less" to collapse). The data is already loaded — no extra fetch.
+function ExpandableList<T>({ items, initial = 5, listClassName, renderItem }: {
+  items: T[];
+  initial?: number;
+  listClassName?: string;
+  renderItem: (item: T, idx: number) => React.ReactNode;
+}): React.ReactElement {
+  const [expanded, setExpanded] = useState(false);
+  const shown = expanded ? items : items.slice(0, initial);
+  const extra = items.length - initial;
+  return (
+    <>
+      <ul className={listClassName}>{shown.map((it, i) => renderItem(it, i))}</ul>
+      {extra > 0 && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="mt-1 text-[11px] font-medium text-blue-600 hover:underline"
+        >
+          {expanded ? 'Show less' : `…and ${extra} more`}
+        </button>
+      )}
+    </>
+  );
 }
 
 // ── the section ─────────────────────────────────────────────────────────────
@@ -99,13 +126,16 @@ const LegalIntelligenceSection: React.FC<LegalIntelligenceSectionProps> = ({ bun
                   {bundle.legalStatus.inForce ? 'In force' : (bundle.legalStatus.statusLabel || 'Not in force')}
                 </span>
                 {bundle.legalStatus.maintenanceEvents && bundle.legalStatus.maintenanceEvents.length > 0 ? (
-                  <ul className="mt-2 space-y-0.5">
-                    {bundle.legalStatus.maintenanceEvents.slice(0, 6).map((e, i) => (
+                  <ExpandableList
+                    items={bundle.legalStatus.maintenanceEvents}
+                    initial={6}
+                    listClassName="mt-2 space-y-0.5"
+                    renderItem={(e, i) => (
                       <li key={i} className="text-[11px] text-slate-600">
                         <span className="font-mono text-slate-400">{fmtDate(e.date)}</span> · {e.description || e.code}
                       </li>
-                    ))}
-                  </ul>
+                    )}
+                  />
                 ) : <div className="mt-1.5 text-[11px] text-slate-400 italic">No maintenance events on record.</div>}
               </>
             )}
@@ -132,15 +162,17 @@ const LegalIntelligenceSection: React.FC<LegalIntelligenceSectionProps> = ({ bun
               ) : (
                 <>
                   <div className="text-sm font-bold text-slate-800">{bundle.challenges.challengeCount} challenge{bundle.challenges.challengeCount === 1 ? '' : 's'}</div>
-                  <ul className="mt-1.5 space-y-1">
-                    {(bundle.challenges.challenges || []).slice(0, 5).map((c, i) => (
+                  <ExpandableList
+                    items={bundle.challenges.challenges || []}
+                    initial={5}
+                    listClassName="mt-1.5 space-y-1"
+                    renderItem={(c, i) => (
                       <li key={i} className="text-[11px] text-slate-600 border-l-2 border-slate-200 pl-2">
                         <span className="font-mono">{c.trialNumber || c.type}</span> — {c.petitioner || 'petitioner'} <span className="text-slate-400">v.</span> {c.owner || 'owner'}
                         {(c.outcome || c.trialStatusCategory) && <span className="text-slate-500"> · {c.outcome || c.trialStatusCategory}</span>}
                       </li>
-                    ))}
-                  </ul>
-                  {(bundle.challenges.challenges?.length || 0) > 5 && <div className="text-[10px] text-slate-400 mt-1">…and {(bundle.challenges.challenges!.length - 5)} more.</div>}
+                    )}
+                  />
                 </>
               )
             )}
@@ -154,17 +186,19 @@ const LegalIntelligenceSection: React.FC<LegalIntelligenceSectionProps> = ({ bun
               ) : (
                 <>
                   <div className="text-sm font-bold text-slate-800">{bundle.litigation.caseCount} suit{bundle.litigation.caseCount === 1 ? '' : 's'}</div>
-                  <ul className="mt-1.5 space-y-1">
-                    {(bundle.litigation.cases || []).slice(0, 5).map((c, i) => (
+                  <ExpandableList
+                    items={bundle.litigation.cases || []}
+                    initial={5}
+                    listClassName="mt-1.5 space-y-1"
+                    renderItem={(c, i) => (
                       <li key={i} className="text-[11px] text-slate-600 border-l-2 border-slate-200 pl-2">
                         <span className="font-mono">{c.caseNumber}</span> · {c.court} <span className="text-slate-400">{fmtDate(c.dateFiled)}</span>
                         {(c.plaintiffs?.length || c.defendants?.length) ? (
                           <div className="text-slate-500">{(c.plaintiffs || []).join(', ') || '—'} <span className="text-slate-400">v.</span> {(c.defendants || []).join(', ') || '—'}</div>
                         ) : null}
                       </li>
-                    ))}
-                  </ul>
-                  {(bundle.litigation.cases?.length || 0) > 5 && <div className="text-[10px] text-slate-400 mt-1">…and {(bundle.litigation.cases!.length - 5)} more.</div>}
+                    )}
+                  />
                 </>
               )
             )}
@@ -178,13 +212,16 @@ const LegalIntelligenceSection: React.FC<LegalIntelligenceSectionProps> = ({ bun
                   <div className="mb-1"><span className="text-slate-500">Current owner:</span> <b>{bundle.assignments.currentAssignee}</b></div>
                 )}
                 {bundle.assignments.assignments && bundle.assignments.assignments.length > 0 ? (
-                  <ul className="space-y-1">
-                    {bundle.assignments.assignments.slice(0, 4).map((a, i) => (
+                  <ExpandableList
+                    items={bundle.assignments.assignments}
+                    initial={4}
+                    listClassName="space-y-1"
+                    renderItem={(a, i) => (
                       <li key={i} className="text-[11px] text-slate-600 border-l-2 border-slate-200 pl-2">
                         <span className="font-mono text-slate-400">{a.reelFrame}</span> · {fmtDate(a.recordedDate)} · {a.conveyanceText}
                       </li>
-                    ))}
-                  </ul>
+                    )}
+                  />
                 ) : <Unavailable msg="No recorded assignments." />}
               </>
             )}
@@ -212,11 +249,14 @@ const LegalIntelligenceSection: React.FC<LegalIntelligenceSectionProps> = ({ bun
               bundle.attorney.attorneys && bundle.attorney.attorneys.length > 0 ? (
                 <>
                   {bundle.attorney.docketNumber && <div className="text-[11px] text-slate-500 mb-1">Docket: {bundle.attorney.docketNumber}</div>}
-                  <ul className="space-y-0.5">
-                    {bundle.attorney.attorneys.slice(0, 5).map((a, i) => (
+                  <ExpandableList
+                    items={bundle.attorney.attorneys}
+                    initial={5}
+                    listClassName="space-y-0.5"
+                    renderItem={(a, i) => (
                       <li key={i} className="text-[11px] text-slate-600">{a.name}{a.registrationNumber ? <span className="text-slate-400"> · Reg. {a.registrationNumber}</span> : null}</li>
-                    ))}
-                  </ul>
+                    )}
+                  />
                 </>
               ) : <Unavailable msg="No attorneys of record." />
             )}

@@ -12,6 +12,7 @@ const CompanyLitigationReport: React.FC<{ initialCompany?: string }> = ({ initia
   const [result, setResult] = useState<CompanyLitigation | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showAll, setShowAll] = useState(false);
 
   const run = useCallback(async (q: string) => {
     const company = q.trim();
@@ -19,6 +20,7 @@ const CompanyLitigationReport: React.FC<{ initialCompany?: string }> = ({ initia
     setLoading(true);
     setError(null);
     setResult(null);
+    setShowAll(false);
     try {
       setResult(await fetchCompanyLitigation(company));
     } catch (e) {
@@ -133,7 +135,7 @@ const CompanyLitigationReport: React.FC<{ initialCompany?: string }> = ({ initia
                 </tr>
               </thead>
               <tbody>
-                {(result.cases || []).slice(0, 100).map((c, i) => (
+                {(result.cases || []).slice(0, showAll ? (result.cases || []).length : 50).map((c, i) => (
                   <tr key={i} className="border-b border-slate-100 last:border-b-0 align-top">
                     <td className="px-3 py-2 capitalize text-slate-600 whitespace-nowrap">{c.role || '—'}</td>
                     <td className="px-3 py-2 font-mono text-slate-700 whitespace-nowrap">{c.caseNumber || '—'}</td>
@@ -146,8 +148,14 @@ const CompanyLitigationReport: React.FC<{ initialCompany?: string }> = ({ initia
               </tbody>
             </table>
           </div>
-          {(result.cases?.length || 0) > 100 && (
-            <div className="text-xs text-slate-400">Showing 100 of {result.cases!.length} suits.</div>
+          {(result.cases?.length || 0) > 50 && (
+            <button
+              type="button"
+              onClick={() => setShowAll((v) => !v)}
+              className="text-xs font-medium text-blue-600 hover:underline"
+            >
+              {showAll ? 'Show less' : `Show all ${result.cases!.length} suits`}
+            </button>
           )}
           <p className="text-[11px] text-slate-400">Factual public-record reporting — not legal advice.</p>
         </div>
