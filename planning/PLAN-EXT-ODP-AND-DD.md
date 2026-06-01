@@ -101,8 +101,14 @@ DD-1 **reuses the EXT-ODP-1 section components + the `/v1/legal-bundle` aggregat
 - **Disclaimers:** "not legal advice" on all litigation/challenge/FTO output.
 - **Sequencing recommendation:** EXT-ODP-1 → DD-1 → (later) FTO/W3 reuse the same `/v1/legal-bundle` data layer.
 
-## D. Open decisions for the user (lock before coding)
-1. **A0-1 monetization:** keep free / per-section / **bundle (~8–12cr)** / Pro-gate. ← shapes everything.
-2. **`/v1/legal-bundle` aggregator:** yes (recommended — one charge, reusable on all surfaces) / no (client fans out, free).
-3. **DD-1 backend:** `/v1/risk-profile` aggregator (recommended, becomes an MCP/RapidAPI product too) / client-orchestrated.
-4. **Build EXT-ODP-1 and DD-1 together** (share the aggregator) or **EXT-ODP-1 first, DD-1 next**.
+## D. Decisions — LOCKED 2026-05-31
+1. **A0-1 monetization → BUNDLE.** One "Load legal intelligence" action, **~8–12 credits, 24h-cached** free re-fetch, via a new `/v1/legal-bundle` aggregator. (Not free, not per-section, not Pro-gate.)
+2. **`/v1/legal-bundle` aggregator → YES.** One charge, one round-trip; reusable on extension + API + MCP + RapidAPI.
+3. **DD-1 backend → `/v1/risk-profile` aggregator** (legal-bundle + dossier header + AI verdict); becomes an MCP/RapidAPI product too. Flat ~40cr.
+4. **Build approach → AGGREGATOR-FIRST, BOTH TOGETHER.** Build `/v1/legal-bundle` + `/v1/risk-profile` first; EXT-ODP-1 sections and DD-1 both consume them.
+
+### Resulting build order
+1. **Backend:** `/v1/legal-bundle` (fan out the 9 per-patent endpoints in parallel, charge ~8–12cr once, 24h cache) → then `/v1/risk-profile` (legal-bundle + dossier header + 1 Gemini verdict call, ~40cr). Add both to the API/MCP/RapidAPI surfaces (new MCP tools + RapidAPI endpoints + Credits cost-map entries).
+2. **EXT-ODP-1 frontend:** 9 dossier sections + "Legal Intelligence" nav cluster (consume `/v1/legal-bundle`), PatentTab snapshot card, ToolsTab company-litigation panel, credit gating via `withCreditCheck`.
+3. **DD-1 frontend:** Workflows-tab "Patent Risk Profile" card → report page reusing the legal sections + a verdict header.
+4. Build + QA on US 8,724,622; deploy functions; bump MCP + republish surfaces.
