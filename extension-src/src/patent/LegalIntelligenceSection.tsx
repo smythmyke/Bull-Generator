@@ -10,6 +10,8 @@ interface LegalIntelligenceSectionProps {
   loading: boolean;
   error: string | null;
   onLoad: () => void;
+  /** Section-number badge (dossier = 14). Pass null to hide it (standalone report). */
+  num?: number | null;
 }
 
 // ── small presentational helpers ───────────────────────────────────────────
@@ -33,11 +35,11 @@ function fmtDate(d?: string): string {
 }
 
 // ── the section ─────────────────────────────────────────────────────────────
-const LegalIntelligenceSection: React.FC<LegalIntelligenceSectionProps> = ({ bundle, loading, error, onLoad }) => {
+const LegalIntelligenceSection: React.FC<LegalIntelligenceSectionProps> = ({ bundle, loading, error, onLoad, num = 14 }) => {
   return (
     <section id="legal-intelligence" className="mb-8 scroll-mt-20">
       <h2 className="text-base font-bold text-slate-800 border-b-2 border-slate-800 pb-1.5 mb-2.5 flex items-center gap-2">
-        <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-800 text-white text-[10px]">14</span>
+        {num !== null && <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-800 text-white text-[10px]">{num}</span>}
         Legal Intelligence
       </h2>
 
