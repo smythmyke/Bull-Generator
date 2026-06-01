@@ -1,98 +1,131 @@
-# Bull-Generator — Roadmap
+# ROADMAP — Bull-Generator
 
-> **For build status of every feature** (shipped, scaffolded, defined-not-started, gated), see [`research/patent-firm-features.md` Part 6](./research/patent-firm-features.md#part-6--build-status). This document is the strategic/phased view; that document is the feature-by-feature tracker.
+**Last updated:** 2026-05-27
+**Scope:** Live Chrome extension (since Nov 2024) — AI Patent Search Generator. React + TypeScript + Firebase + Stripe. Surfaces: extension + REST API + MCP server (`patent-search-mcp-server`, npm + Official MCP Registry). Converted from Phase-structured roadmap on 2026-05-27. **For build status of every feature**, see [`research/patent-firm-features.md` Part 6](./research/patent-firm-features.md#part-6--build-status) — this file is the strategic/phased view.
 
-## Current state
+<!-- DASHBOARD-META
+project_key: bull-generator
+title: "Bull-Generator"
+purpose: "AI Patent Search Generator — Chrome extension + REST API + MCP server for patent professionals"
+phase: "Phase 2.7 — Tier 2 dossier + Workflows"
+phases: ["Phase 0 — Patent Dossier", "Phase 2.5 — USPTO ODP", "Phase 2.6 — Public API + MCP", "Phase 2.7 — Tier 2 + Workflows", "Phase 2 — Agent SDK"]
+key_dates:
+  - {label: "Smithery/Glama auto-index expected by", date: "2026-06-02"}
+-->
 
-Live Chrome extension (since Nov 2024) — "AI Patent Search Generator." Takes natural language input and generates Boolean queries for patent search systems (USPTO, EPO, Google Patents) with wildcards, synonyms, Porter stemming, field selection, and broad/moderate/narrow modes. React + TypeScript + Firebase + Stripe.
+**Status legend:** ☐ todo · ◐ in progress · ✓ done · ⊘ blocked · ✗ dropped
 
-**Status as of 2026-05-12:** Patent Dossier surface is live (side-panel chips + full-tab dossier, now **13 sections** including examiner intelligence, prosecution-history with AI Office Action analysis, Claim Chart, and IDS generator). USPTO ODP integration is **100% complete** (Tier 1 ODP scope closed); Tier 2 claim charting also shipped. Priority revised 2026-05-12 after W1 cost analysis: next builds are FTO → W4 Patent Landscape → W1 Prior Art Hunter last.
+> Editing rules: `C:\Projects\dashboards\project-dashboard\STRUCTURE.md`.
 
-**Strategic note:** Of the four products in the portfolio, Bull-Generator has the highest per-transaction price ceiling because patent professionals bill $200–600/hour. If the product has users but low revenue, it's likely a pricing/packaging problem — the current utility model leaves money on the table compared to a workflow model.
+## ACTIVE — This Week
 
-## Phase 0 — Patent Dossier (per-patent surface) ✅ shipped
+- ✅ ODP-1: ODP data-source migration for API/MCP — **COMPLETE 2026-05-31.** Dossier + legal-intelligence (`/v1/challenges`, `/v1/legal-status`, `/v1/assignments`, `/v1/litigation`, `/v1/company-litigation`) + enrichment all on ODP. Final piece: `/v1/search` no longer scrapes Google on the public surface — the API/MCP path returns AI-generated Boolean queries (`executionMode=client_side`) for the caller to run (commit `7fdc745` backend + `4120e85` MCP v0.4.0; deployed + verified). **The marketplace surface is now 100% scraping-free / USPTO-only — RED #1 legal risk closed.** Extension still on Google Patents (unchanged). Plan: `planning/PLAN-API-DATA-MIGRATION.md`.
+- ☐ API-FT-1 (was "B"): Optional server-side full-text search execution from clean data. ODP has NO full-text search (title/metadata only — verified 2026-05-31). PatentsView PatentSearch API (free key, full-text title+abstract) is the only clean source but is mid-transition into USPTO ODP (decommission/transition risk). Plan: request a PatentsView key, build a `/v1/search` execution adapter behind a flag with graceful fallback. **Deferred** — only build if a real API/MCP consumer asks for server-side hits; `/v1/query` + client-side execution covers the use case today. See `memory/research_v1_search_fulltext_source.md`.
+- ☐ FTO-1: Build FTO (Freedom-to-Operate) surface — different input shape (product description, not patent) than dossier/MCP tools. Spec: `research/fto-build-plan.md`. Next major feature per 2026-05-12 priority revision (FTO → W4 → W1).
+- ☐ REVIEW-1: Triage pre-existing untracked work — `REVENUE-BENCHMARKS.md`, `docs/PORTFOLIO-INTEGRATION-RESEARCH-2026-05-21.md`, `docs/SLACK-BOT-RESEARCH-2026-05-21.md`, `research/pricing-audit-2026-05-12.md`, `functions/debug-odp-*.js`. Commit or discard.
 
-Not in the original roadmap (added on 2026-05-09 after the patent-firm-features research surfaced Tier 1 as a higher-leverage starting point than the agent ladder). Treats Bull-Generator's existing "search query" utility as just one half of the workflow; the other half — "what is this patent?" — is the dossier.
+## ACTIVE — Next Two Weeks
 
-- [x] Side-panel tab consolidation + new Patent / Workflows scaffolds (`e10b3e9`)
-- [x] Patent Dossier spec + static HTML mockup (`a36ed22`)
-- [x] `/patent-dossier` Cloud Function with full GP-scrape parser + 24h cache (`21d66ca`)
-- [x] Side-panel chip view (`f8ee74f`)
-- [x] Full-tab dossier route with 9 sections (`1cff587`)
-- [x] AI Summary (Gemini-backed, on-demand, auto-loads, bundled pricing) (`5c9d6ef`, `b2c5151`)
-- [x] Brand + scroll-spy nav + Chrome Web Store CTAs + auto-detect from active GP tab + dossier polish (`9f5e9b4`, `dfab7f6`, pending)
+- ☐ MCP-SUB-1: Cursor Directory submission for `patent-search-mcp-server` at `cursor.directory/plugins/new` (~5 min) — paste-ready content at `C:\Projects\MarkItUp\planning\CURSOR-DIRECTORY-SUBMISSIONS.md`.
+- ☐ MCP-SUB-2: Smithery Settings tab fill — Display Name, Description, Homepage, GitHub Repo, Icon, Visibility=Public (currently unlisted by default per Smithery gotcha #5). Listing exists but hidden from search until done.
+- ☐ INDEX-1: Smithery / Glama indexing check — if 2026-06-02 has passed and listings still missing, submit manually via Smithery UI.
+- ☐ W4-1: Build W4 Patent Landscape — CPC clustering + competitor overlay; first Workflows-tab agent shipped. Different buyer (VC/R&D) than W1's patent pros. $199 per report.
 
-## Phase 1 — Validate pricing/packaging hypothesis ⏸ deferred
+## BACKLOG
 
-Originally the gate for building agents. **Decision 2026-05-10: deferred** — low user base makes pricing-interview signal too weak to be useful. Building first, price-testing live, revisiting after first paid Workflow-tab use.
+### ODP legal/enrichment endpoints → extension (AFTER API/MCP ships)
+- ☐ EXT-ODP-1: Surface the net-new ODP endpoints in the extension UI once the API/MCP versions are built and proven — validity challenges (PTAB), chain of title (assignments), in-force/maintenance status, term/PTA, prosecution timeline, attorney of record, entity status, pregrant-pub, and litigation history. **Additive, net-new data the extension never had — does NOT touch the existing Google Patents dossier path, so no regression risk.** Likely a new "Legal" tab / dossier sections. Source of truth: `planning/PLAN-API-DATA-MIGRATION.md` (Phases 7–8 + build sequence). Discovered during the 2026-05-31 ODP migration.
+- ☐ EXT-ODP-2: Open policy question — these endpoints are ODP-only (net-new), so the extension can call them regardless of the GP-vs-ODP dossier split. Confirm whether the extension's core *dossier* eventually also moves to ODP or stays on Google Patents (current decision: stays on GP — "don't replace what works").
 
-- [ ] Email/interview 5 patent professionals (attorneys, searchers, solo inventors from LinkedIn). Key questions:
-  - "If a tool ran a pre-search for your invention and returned 10 ranked prior art references in 10 minutes for $29, would you use it?"
-  - "What would break your trust in the output?"
-  - "What's the actual workflow gap today?"
-- [ ] Audit current Bull-Generator users — who's using it, how often, what's the current conversion to paid?
-- [ ] Document the user research findings to inform Phase 2 build priorities
+### Workflow agents
+- ☐ LIT-AI-1: Features/keywords → litigation (semantic). User describes features → AI finds the closest litigated patents. Composes a (future) semantic patent search (embeddings over claims/abstracts — overlaps W1) with the live litigation join (`/v1/litigation` + `litigationByPatent`, shipped 2026-05-31). PTLITIG has no technical content, so the bridge must go through patent text. Roadmapped from the 2026-05-31 reverse-lookup discussion; see `planning/PLAN-API-DATA-MIGRATION.md` "Reverse lookups". Depends on W1-style search.
+- ☐ W1-1: Prior Art Hunter (priority #4 — DEFERRED per 2026-05-12 cost analysis). $29–99 per run. Pre-launch non-negotiables: prompt caching, per-user concurrent-run cap, daily org-wide spend ceiling, verification step, refund policy. See `memory/research_w1_prior_art_hunter.md`.
+- ☐ W2-1: Claim Analyzer Agent — upload patent application → claim-by-claim novelty analysis with suggested rewording. $49 per application. Requires PDF parsing + deeper claim interpretation.
+- ☐ W3-1: Freedom-to-Operate Agent (formal agent version; supersedes/extends FTO-1 surface) — product description → active-patent search → infringement risk matrix. $99–299 per product. Heavy legal disclaimers required.
 
-## Phase 2 — Agent SDK expansion (now build-first, validate-live)
+### MCP server v1.1 (gated on real usage signal)
+- ☐ MCP-V11-1: Add `claim_chart` as standalone tool
+- ☐ MCP-V11-2: Add `claims`, `status`, `compare` tools
+- ☐ MCP-V11-3: Full USPTO CPC scheme load
+- ☐ MCP-V11-4: `cpc` reverse lookup
+- ☐ MCP-V11-5: Optional launch announcement (HN, ProductHunt) — JK playbook says passive distribution suffices; do only if traction warrants
 
-See `AGENT_SDK.md` for full opportunity analysis, starter code, and pricing math.
-Build status mirrored in [patent-firm-features.md Part 5 + Part 6](./research/patent-firm-features.md#part-5--workflow-agents-one-shot-deliverables).
+### MCP/API distribution (cross-portfolio playbook)
+- ⊘ MCP-SUB-3: awesome-mcp-servers PR #6961 (punkpeye) — `Add smythmyke/patent-search-mcp-server (Legal)` — filed, awaiting Frank's review. Backlog is ~1,300 PRs. Check: `gh pr view 6961 --repo punkpeye/awesome-mcp-servers --json state,reviewDecision`.
+- ⊘ MCP-SUB-4: MCP.so issue #2529 at `chatmcp/mcpso` — filed, awaiting. Check: `gh issue view 2529 --repo chatmcp/mcpso --json state`.
+- ✗ MCP-SUB-5: appcypher/awesome-mcp-servers — DROPPED, maintainer disabled PRs/issues 2026-05-26.
+- ☐ MCP-SUB-6: GovToolsPro MCP distribution followup — once GovToolsPro MCP ships (sibling project), replicate the 5-surface playbook. Reference: `~\.claude\projects\C--Projects-Bull-Generator\memory\project_govtoolspro_mcp_distribution_followup.md`.
 
-- [ ] **W1 Prior Art Hunter Agent** (priority #1 — $29–99 per run)
-  - Invention description → 3 Boolean queries (broad/moderate/narrow) → patent searches → ranked prior art report with citations
-  - Critical: every cited publication MUST be verified via WebFetch before inclusion (no hallucinations)
-  - Custom MCP tools: wrap existing Boolean generator + patent search API
-  - First step: build as CLI, run on 5 real invention descriptions, have patent expert review output quality
-- [ ] **W2 Claim Analyzer Agent** (priority #2 — $49 per application)
-  - Upload patent application → claim-by-claim novelty analysis with suggested rewording
-  - Requires PDF parsing + deeper claim interpretation — harder than Prior Art Hunter, build second
-- [ ] **W3 Freedom-to-Operate Agent** (priority #3 — $99–299 per product)
-  - Product description → active-patent search → infringement risk matrix
-  - HEAVY legal disclaimers required on every output
-- [ ] **W4 Technology Landscape Agent** (priority #4 — $199 per report)
-  - Technology area → top assignees, filing trends, white space analysis
-  - Target audience: VCs, R&D teams (different buyer than patent pros)
+### Pricing/packaging validation (deferred)
+- ⊘ VALIDATE-1: Email/interview 5 patent professionals — blocked: low user base makes pricing-interview signal too weak. Building first, price-testing live.
+- ⊘ VALIDATE-2: Audit current Bull-Generator users — same blocker
+- ⊘ VALIDATE-3: Document user research findings to inform Phase 2 priorities — same blocker
 
-## Phase 2.5 — USPTO ODP integration ✅ complete
+### Cross-project + ops
+- ☐ OPS-1: Cross-project hosting tangle (Option C, deferred) — see `memory/feedback_cross_project_hosting_tangle.md`. DO NOT deploy hosting from Bull-Generator.
 
-Parallel track to the Workflow agents — fills in the prosecution-heavy half of dossier Tier 1.
+### Phase 3 — Continued SDK exploration
+- ☐ EXPLORE-1: Citation network agent — given a patent, map all forward/backward citations and assess prior art web
+- ☐ EXPLORE-2: Examiner rejection responder — analyze an office action, draft response arguments
+- ☐ EXPLORE-3: Patent family tracker — monitor assignee filings, alert on new applications in watched areas
+- ☐ EXPLORE-4: Translation-aware search — Japanese/Chinese/Korean patent literature
+- ☐ EXPLORE-5: Design patent visual search (when vision models can match design drawings)
+- ☐ EXPLORE-6: Agent that explains patent claims in plain English for non-lawyers (consumer play)
 
-- [x] **File wrapper viewer** (2026-05-12) — `/prosecution-history` endpoint + server-side PDF proxy `/odp-document` (PDFs require X-API-KEY so direct `<a href>` fails); § 10 Prosecution section with category filter chips + auto-load + 7-day cache
-- [x] **Office Action analyzer** (2026-05-12) — `/oa-analyze` endpoint, Gemini 2.5 Flash multimodal PDF input (handles scanned OAs via native OCR — no separate text extraction); inline-expand panel with rejections / cited art / suggested arguments; 5 free per application then 1 credit
-- [x] **Examiner statistics** (2026-05-12) — `/examiner-stats` endpoint pulling from USPTO ODP bibliographic + search (PatentsView migrated into ODP 2026-03-20); § 9 with examiner name, art unit, total apps, allowance rate, avg pendency
-- [x] **IDS generator § 12** (2026-05-12) — client-side merge of backward citations + OA-cited art (dedupe by normalized patent number); four exporters (PDF filled SB/08 via jspdf-autotable, DOCX via `docx`, CSV, XML internal schema); free, bundled with dossier; non-US patent banner; no-Cloud-Function needed
-- [x] **Reliability: Google Patents 429/5xx retry** (2026-05-12) — `fetchPatentHtml` retry-with-backoff (~500ms + 1500ms + jitter); new `rate_limited` error code → HTTP 429 instead of cryptic 502; friendly client error UI with Try Again button
+## DONE (recent wins)
 
-## Phase 2.7 — Tier 2 dossier features + Workflows
+- ✓ 2026-05-27 — MCP server live on 5 surfaces — npm + Official MCP Registry + Smithery (`.mcpb` bundle via Python `inputSchema` patch workaround) + Glama (auto-indexed from standalone repo `smythmyke/patent-search-mcp-server` after migrating out of subfolder) + GitHub Release v0.1.0.
+- ✓ 2026-05-26 — Phase 2.6 shipped: Public API + MCP server. `patent-search-mcp-server@0.1.0` with 11 tools published to npm + Official MCP Registry (`io.github.smythmyke/patent-search-mcp-server`). Commit `20b643c` on `main`, pushed to GitHub.
+- ✓ 2026-05-26 — 5 new backend endpoints: `/v1/similar`, `/v1/citations`, `/v1/family`, `/v1/cpc`, `/v1/search` (execute + query modes). Reuse Google Patents XHR scrape + dossier 24h cache.
+- ✓ 2026-05-25 — Public API foundation: `functions/src/auth.ts` + `keys.ts` + `apiRateLimit.ts`. API-key auth (`psg_live_*`/`psg_test_*`) alongside Firebase ID token. Per-key Firestore-backed rate limit (60/min, 1000/day). Scope-based authorization. `/v1/*` URL prefix.
+- ✓ 2026-05-25 — Extension Admin tab: API Keys section with list / create-form / reveal sub-state machine, 5 scope checkboxes, 3-second delay on reveal, two-click revoke confirm.
+- ✓ 2026-05-12 — Phase 2.7 Claim Chart § 12: `/claim-chart` endpoint; Gemini 2.5 Flash decomposes independent claims into elements + maps to examiner-cited art from OA Analyzer; per-claim status synthesis; 24h cache; auto-loads; free, bundled with dossier.
+- ✓ 2026-05-12 — Phase 2.5 USPTO ODP integration complete: file wrapper viewer (`/prosecution-history`), Office Action analyzer (`/oa-analyze`, Gemini 2.5 Flash multimodal), examiner statistics (`/examiner-stats`), IDS generator § 12 (PDF/DOCX/CSV/XML exporters), Google Patents 429/5xx retry-with-backoff.
+- ✓ 2026-05-09 — Phase 0 Patent Dossier shipped: side-panel chips + full-tab dossier with **13 sections** including examiner intelligence, prosecution-history with AI Office Action analysis, Claim Chart, and IDS generator. Cloud Function with full GP-scrape parser + 24h cache.
+- ✓ 2026-05-09 — AI Summary (Gemini-backed, on-demand, auto-loads, bundled pricing). Brand + scroll-spy nav + CWS CTAs + auto-detect from active GP tab + dossier polish.
 
-Following the 2026-05-12 priority revision (W1 deferred due to per-run cost; see `memory/research_w1_prior_art_hunter.md`):
+## DROPPED
 
-- [x] **Claim Chart § 12** (2026-05-12) — `/claim-chart` endpoint; Gemini 2.5 Flash decomposes independent claims into elements + maps to examiner-cited art from OA Analyzer; per-claim status synthesis; 24h cache keyed by (patentNumber, analyzed-doc-set); auto-loads, re-loads when OA analyses change; free, bundled with dossier
-- [ ] **FTO** (item 2 next) — different input (product description, not patent); could be side-panel tool or W3 agent
-- [ ] **W4 Patent Landscape** (item 3) — CPC clustering + competitor overlay; first Workflows-tab agent shipped. Different buyer (VC/R&D) than W1's patent pros.
-- [ ] **W1 Prior Art Hunter** (item 4 — DEFERRED) — see Phase 2 below. Pre-launch non-negotiables: prompt caching, per-user concurrent-run cap, daily org-wide spend ceiling, verification step, refund policy.
+*(none)*
 
-## Phase 3 — Explore Agent SDK for more opportunities
+---
 
-**Task:** Revisit `AGENT_SDK.md` quarterly. Patent search is a deep vertical with many workflow agents worth building. Candidate areas:
+# Reference
 
-- Citation network agent (given a patent, map all forward/backward citations and assess prior art web)
-- Examiner rejection responder (analyze an office action, draft response arguments)
-- Patent family tracker (monitor assignee filings, alert on new applications in watched areas)
-- Translation-aware search (Japanese/Chinese/Korean patent literature)
-- Design patent visual search (when vision models can match design drawings)
-- Agent that explains patent claims in plain English for non-lawyers (consumer play)
+*Below this line is preserved-as-was reference material. The dashboard parser ignores everything from here down.*
 
-Review cadence: after each Phase 2 agent ships, re-read `C:\Projects\ideas\claude-code-research\agent-sdk.md` and check `https://code.claude.com/docs/en/agent-sdk/overview` for new capabilities.
+## Strategic context
+
+Of the four products in the portfolio, Bull-Generator has the highest per-transaction price ceiling because patent professionals bill $200–600/hour. If the product has users but low revenue, it's likely a pricing/packaging problem — the current utility model leaves money on the table compared to a workflow model.
 
 ## Risk register
 
 - **Hallucination is existential** — one invented reference destroys trust with patent pros. All outputs require source verification.
 - **Not legal advice** — every Claim Analyzer and FTO output must carry a legal disclaimer. Consult an IP attorney about liability exposure before shipping FTO.
-- **Patent search API costs** — Google Patents XHR scrape (`patents.google.com/xhr/result?...`) is the canonical free path and what production uses today. USPTO ODP covers the prosecution-data half (free with API key). Commercial APIs (PatSnap, LexisNexis TotalPatent) are a budget consideration if either of those breaks at scale. **BigQuery is excluded** — per `feedback_no_bigquery.md`, prior usage cost $7.44/call due to 1.19 TB scans; never propose it as a fallback.
+- **Patent search API costs** — Google Patents XHR scrape (`patents.google.com/xhr/result?...`) is the canonical free path and what production uses today. USPTO ODP covers the prosecution-data half (free with API key). Commercial APIs (PatSnap, LexisNexis TotalPatent) are a budget consideration if either breaks at scale. **BigQuery is excluded** — per `feedback_no_bigquery.md`, prior usage cost $7.44/call due to 1.19 TB scans; never propose it as a fallback.
+
+## Resume-here checkpoint (last updated 2026-05-26)
+
+**Last shipped:** Phase 2.6 (public API + MCP server) on 2026-05-26. Commit `20b643c` on `main`, pushed to GitHub. npm + MCP Registry live.
+
+**Test artifacts left in place:**
+- Live API keys for `smythmyke@gmail.com`: `psg_live_uHd1aiKLS8gX1MzkNnOhvzCDZ35Djz_mosG2Au9Ld5c` (all scopes) and `psg_live_l1XxVZpnRnJUxvDHkOMKhrW2HzIcy3cJBvbA42jS9V8` (credits:read only — used for scope-rejection test). Keep or revoke via extension Admin tab.
+- `functions/scripts/mint-test-key.js` — one-off CLI utility for minting keys outside the UI. Keep.
+
+**Key references to load first next session:**
+- `memory/MEMORY.md` — auto-loaded
+- `memory/project_mcp_api_deployment_plan.md` — locked decisions for the MCP/API track
+- `memory/feedback_mcp_cloning_strategy.md` — portfolio-wide three-tier cloning rule
+- `memory/feedback_cross_project_hosting_tangle.md` — DO NOT deploy hosting from Bull-Generator
+- `planning/PLAN-MCP-SERVER.md` — what shipped, what's in v1.1
+- `planning/PLAN-PUBLIC-API.md` — endpoints reference
 
 ## Related docs
 
 - [README.md](./README.md) — (needs expansion; currently placeholder)
 - [AGENT_SDK.md](./AGENT_SDK.md) — Agent SDK opportunities, starter code, pricing math
-- [patent-search-privacy-policy.html](./patent-search-privacy-policy.html) — privacy policy (referenced as context)
+- [planning/PLAN-PUBLIC-API.md](./planning/PLAN-PUBLIC-API.md) — public API spec + endpoint reference
+- [planning/PLAN-MCP-SERVER.md](./planning/PLAN-MCP-SERVER.md) — MCP server spec + 11-tool inventory
+- [research/patent-firm-features.md](./research/patent-firm-features.md) — feature-by-feature tracker (Part 6 = build status)
+- [research/fto-build-plan.md](./research/fto-build-plan.md) — FTO spec
+- [patent-search-privacy-policy.html](./patent-search-privacy-policy.html) — privacy policy
