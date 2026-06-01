@@ -554,6 +554,32 @@ export async function fetchRiskProfile(patentNumber: string): Promise<RiskProfil
   return callAI<RiskProfile>('/risk-profile', { patentNumber });
 }
 
+// ── Company litigation reverse-lookup (EXT-ODP-1, ToolsTab) ───────────────
+export interface CompanyLitigationCase {
+  role?: string;
+  caseNumber?: string;
+  court?: string;
+  dateFiled?: string;
+  cause?: string;
+  patents?: string[];
+  opposing?: string[];
+}
+export interface CompanyLitigation {
+  query?: string;
+  matchedName?: string;
+  displayNames?: string[];
+  caseCount?: number;
+  asPlaintiffCount?: number;
+  asDefendantCount?: number;
+  cases?: CompanyLitigationCase[];
+  related?: Array<{ name: string; caseCount: number }>;
+  suggestions?: Array<{ name: string; caseCount: number }>;
+}
+
+export async function fetchCompanyLitigation(company: string, limit = 50): Promise<CompanyLitigation> {
+  return callAI<CompanyLitigation>('/company-litigation', { company, limit });
+}
+
 // ── Claim Chart § 12 ─────────────────────────────────────────────────────
 
 export type ClaimStatus = 'allowed' | 'rejected' | 'pending' | 'unknown';
