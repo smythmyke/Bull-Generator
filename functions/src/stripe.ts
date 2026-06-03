@@ -8,6 +8,8 @@ import {
   grantSubscriptionCredits,
   getStripePriceId,
   PurchaseMetadata,
+  PlatformSource,
+  coerceSource,
 } from "./credits";
 
 function getStripe(): Stripe {
@@ -61,7 +63,8 @@ async function getOrCreateStripeCustomer(
 export async function createCreditCheckoutSession(
   uid: string,
   email: string,
-  packId: string
+  packId: string,
+  source?: PlatformSource
 ): Promise<{url: string; sessionId: string}> {
   const pack = CREDIT_PACKS.find((p) => p.id === packId);
   if (!pack) {
@@ -91,6 +94,7 @@ export async function createCreditCheckoutSession(
       uid,
       packId: pack.id,
       credits: String(pack.credits),
+      source: source || "extension",
     },
     success_url: `${DEFAULT_SUCCESS_URL}?purchase=success`,
     cancel_url: `${DEFAULT_CANCEL_URL}?purchase=cancelled`,
@@ -108,7 +112,8 @@ export async function createCreditCheckoutSession(
 export async function createSubscriptionCheckoutSession(
   uid: string,
   email: string,
-  planId: string
+  planId: string,
+  source?: PlatformSource
 ): Promise<{url: string; sessionId: string}> {
   const plan = SUBSCRIPTION_PLANS.find((p) => p.id === planId);
   if (!plan) {
@@ -126,12 +131,14 @@ export async function createSubscriptionCheckoutSession(
     metadata: {
       uid,
       planId: plan.id,
+      source: source || "extension",
     },
     subscription_data: {
       metadata: {
         uid,
         planId: plan.id,
         monthlyCredits: String(plan.monthlyCredits),
+        source: source || "extension",
       },
     },
     success_url: `${DEFAULT_SUCCESS_URL}?subscription=success`,
@@ -216,14 +223,16 @@ export async function handleWebhookEvent(
       }
 
       const pack = CREDIT_PACKS.find((p) => p.id === packId);
+      const source = coerceSource(session.metadata?.source);
       const purchaseMetadata: PurchaseMetadata = {
         packId,
         packLabel: pack?.label || `${credits} searches`,
         amountPaid: session.amount_total || pack?.price || 0,
+        source,
       };
 
       await addCredits(db, uid, credits, purchaseMetadata);
-      console.log(`Added ${credits} top-up credits to user ${uid}`);
+      console.log(`Added ${credits} top-up credits to user ${uid} (source: ${source})`);
       break;
     }
 
@@ -248,6 +257,7 @@ export async function handleWebhookEvent(
       const plan = SUBSCRIPTION_PLANS.find((p) => p.id === planId);
       const allocation = plan?.monthlyCredits || monthlyCredits;
       const periodEnd = new Date(subscription.current_period_end * 1000).toISOString();
+      const source = coerceSource(subscription.metadata?.source);
 
       await grantSubscriptionCredits(db, uid, allocation, {
         planId,
@@ -256,9 +266,35 @@ export async function handleWebhookEvent(
         status: "active",
         currentPeriodEnd: periodEnd,
         monthlyAllocation: allocation,
+        source,
       });
 
-      console.log(`Granted ${allocation} subscription credits to ${uid} (${planId})`);
+      // Record this invoice as a subscription purchase so revenue attribution
+      // has a single source of truth (top-ups + subscription renewals both land
+      // in credits/{uid}/purchases). Doc ID = invoice.id makes the write
+      // idempotent against duplicate Stripe webhook deliveries.
+      const purchaseRef = db
+        .collection("credits")
+        .doc(uid)
+        .collection("purchases")
+        .doc(invoice.id);
+      await purchaseRef.set(
+        {
+          date: admin.firestore.FieldValue.serverTimestamp(),
+          kind: "subscription",
+          planId,
+          packLabel: plan ? `${plan.name} (${allocation} searches/mo)` : `${allocation} searches/mo`,
+          credits: allocation,
+          amountPaid: invoice.amount_paid || 0,
+          source,
+          stripeInvoiceId: invoice.id,
+          stripeSubscriptionId: subscriptionId,
+          billingReason: invoice.billing_reason || null,
+        },
+        {merge: true}
+      );
+
+      console.log(`Granted ${allocation} subscription credits to ${uid} (${planId}) — source ${source}`);
       break;
     }
 
