@@ -1473,8 +1473,8 @@ const PatentDossierPage: React.FC = () => {
     }
   }, [dossier, historyLoading]);
 
-  // Legal Intelligence (§14) — on-demand, credit-gated. One call assembles the
-  // 9 ODP/PTAB/litigation slices; the backend charges once and caches 24h.
+  // Legal Intelligence (§14) — on-demand, free for signed-in extension users.
+  // One call assembles the 9 ODP/PTAB/litigation slices; the backend caches 24h.
   const handleLoadLegal = useCallback(async () => {
     if (!dossier || legalLoading) return;
     setLegalLoading(true);

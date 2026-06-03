@@ -607,7 +607,9 @@ export const ai = functions
           await logApiUsageIfKey(ctx, { isError: true });
           return;
         }
-        if (result.bundle && !result.bundle.cached) {
+        // Extension §14 "Legal Intelligence" is free for signed-in users; the
+        // metered tier is the DD-1 risk profile (AI verdict) + marketplace API.
+        if (result.bundle && !result.bundle.cached && ctx.source !== "firebase") {
           const deductResult = await useCredit(
             db, ctx.uid, `legal-bundle:${result.bundle.patentNumber}`, LEGAL_BUNDLE_CREDIT_COST, platformSource
           );

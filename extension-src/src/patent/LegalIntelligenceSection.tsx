@@ -87,9 +87,9 @@ const LegalIntelligenceSection: React.FC<LegalIntelligenceSectionProps> = ({ bun
           >
             <Sparkles className="h-3.5 w-3.5" />
             Load legal intelligence
-            <span className="ml-1 text-[10px] font-medium opacity-80">~10 credits</span>
+            <span className="ml-1 text-[10px] font-medium opacity-80">Free</span>
           </button>
-          <p className="text-[10px] text-slate-400 mt-2">Cached 24h — re-opening is free.</p>
+          <p className="text-[10px] text-slate-400 mt-2">USPTO, PTAB &amp; court records — no credits used.</p>
         </div>
       )}
 
