@@ -16,7 +16,7 @@ interface CpcEntry {
   title: string;
 }
 
-const SECTIONS: Record<string, string> = {
+export const SECTIONS: Record<string, string> = {
   A: "Human Necessities",
   B: "Performing Operations; Transporting",
   C: "Chemistry; Metallurgy",
@@ -28,7 +28,7 @@ const SECTIONS: Record<string, string> = {
   Y: "General Tagging of New Technological Developments / Cross-Sectional Technologies",
 };
 
-const SUBCLASSES: Record<string, string> = {
+export const SUBCLASSES: Record<string, string> = {
   // A — Human Necessities
   A01B: "Soil working in agriculture or forestry; Parts, details, or accessories of agricultural machines or implements",
   A01N: "Preservation of bodies of humans or animals or plants or parts thereof; Biocides; Pest repellents or attractants",
