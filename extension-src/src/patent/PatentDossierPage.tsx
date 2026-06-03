@@ -23,10 +23,13 @@ import {
   DossierSummary,
   ClaimChart,
   ClaimScopeLabel,
+  fetchLegalBundle,
+  LegalBundle,
 } from '../services/apiService';
 import { useAuthContext } from '../contexts/AuthContext';
 import IdsSection from './IdsSection';
 import ClaimChartSection from './ClaimChartSection';
+import LegalIntelligenceSection from './LegalIntelligenceSection';
 import { CheckCircle2, XCircle, Clock, AlertTriangle, ExternalLink, Printer, Sparkles, RefreshCw, Download } from 'lucide-react';
 
 // ── Visual helpers ──────────────────────────────────────────────────────
@@ -100,6 +103,7 @@ const NAV_SECTIONS = [
   { id: 'export', label: 'Export' },
   { id: 'claim-chart', label: 'Chart' },
   { id: 'ids', label: 'IDS' },
+  { id: 'legal-intelligence', label: 'Legal' },
 ];
 
 const CHROME_STORE_URL =
@@ -1411,6 +1415,10 @@ const PatentDossierPage: React.FC = () => {
   const [claimChartLoading, setClaimChartLoading] = useState(false);
   const [claimChartError, setClaimChartError] = useState<string | null>(null);
 
+  const [legalBundle, setLegalBundle] = useState<LegalBundle | null>(null);
+  const [legalLoading, setLegalLoading] = useState(false);
+  const [legalError, setLegalError] = useState<string | null>(null);
+
   const [activeId, setActiveId] = useState<string>(NAV_SECTIONS[0].id);
   // Click-driven nav temporarily wins over scroll observer to avoid flicker
   // while smooth-scrolling settles on the target.
@@ -1464,6 +1472,22 @@ const PatentDossierPage: React.FC = () => {
       setHistoryLoading(false);
     }
   }, [dossier, historyLoading]);
+
+  // Legal Intelligence (§14) — on-demand, free for signed-in extension users.
+  // One call assembles the 9 ODP/PTAB/litigation slices; the backend caches 24h.
+  const handleLoadLegal = useCallback(async () => {
+    if (!dossier || legalLoading) return;
+    setLegalLoading(true);
+    setLegalError(null);
+    try {
+      const result = await fetchLegalBundle(dossier.patentNumber);
+      setLegalBundle(result);
+    } catch (e) {
+      setLegalError((e as Error)?.message || 'Failed to load legal intelligence');
+    } finally {
+      setLegalLoading(false);
+    }
+  }, [dossier, legalLoading]);
 
   useEffect(() => {
     document.title = patentNumber ? `${patentNumber} — Patent Dossier` : 'Patent Dossier';
@@ -1540,6 +1564,8 @@ const PatentDossierPage: React.FC = () => {
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setLegalBundle(null);
+    setLegalError(null);
     fetchPatentDossier(patentNumber)
       .then((d) => {
         if (cancelled) return;
@@ -1744,6 +1770,12 @@ const PatentDossierPage: React.FC = () => {
           dossier={dossier}
           applicationNumber={history?.applicationNumber}
           oaAnalyses={Array.from(oaAnalyses.values())}
+        />
+        <LegalIntelligenceSection
+          bundle={legalBundle}
+          loading={legalLoading}
+          error={legalError}
+          onLoad={handleLoadLegal}
         />
 
         <footer className="mt-10 pt-4 border-t-2 border-slate-800 text-center text-[10px] text-slate-500 leading-relaxed">

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Workflow, Search, FileCheck, Shield, BarChart3, Clock } from 'lucide-react';
+import { Workflow, Search, FileCheck, Shield, BarChart3, Clock, ShieldAlert, ExternalLink } from 'lucide-react';
 
 interface WorkflowCard {
   id: string;
@@ -7,9 +7,18 @@ interface WorkflowCard {
   description: string;
   credits: string;
   icon: React.ReactNode;
+  live?: boolean;
 }
 
 const WORKFLOWS: WorkflowCard[] = [
+  {
+    id: 'risk-profile',
+    name: 'Patent Risk Profile',
+    description: 'Patent number → instant risk verdict: validity challenges, litigation, status & term',
+    credits: '~40 credits',
+    icon: <ShieldAlert className="h-3.5 w-3.5 text-red-500" />,
+    live: true,
+  },
   {
     id: 'prior-art-hunter',
     name: 'Prior Art Hunter',
@@ -40,6 +49,13 @@ const WORKFLOWS: WorkflowCard[] = [
   },
 ];
 
+// Every workflow opens a full-tab report page (report.html) so results have
+// room to breathe — the side panel is too cramped for thorough patent output.
+function openReport(workflowId: string): void {
+  const url = chrome.runtime.getURL(`report.html?workflow=${encodeURIComponent(workflowId)}`);
+  chrome.tabs.create({ url });
+}
+
 const WorkflowsTab: React.FC = () => {
   return (
     <div className="space-y-3">
@@ -47,36 +63,52 @@ const WorkflowsTab: React.FC = () => {
         <div className="flex items-center gap-1.5 font-medium text-foreground">
           <Workflow className="h-3.5 w-3.5 text-purple-500" />
           Workflows
-          <span className="ml-auto text-[9px] uppercase tracking-wide text-muted-foreground">
-            Coming soon
-          </span>
         </div>
         <p className="mt-1 text-muted-foreground">
-          One-shot deliverables for patent professionals. Each agent will open a full-tab report when launched. Workflows arrive in a future release.
+          One-shot deliverables for patent professionals. Each agent opens a <b>full-tab report</b>.
+          <b> Patent Risk Profile</b> is live; more agents arrive in future releases.
         </p>
       </div>
 
       <div className="space-y-1.5">
         {WORKFLOWS.map((wf) => (
-          <div
+          <button
             key={wf.id}
-            className="rounded-lg border bg-card px-3 py-2 opacity-75"
+            onClick={() => wf.live && openReport(wf.id)}
+            disabled={!wf.live}
+            className={`w-full text-left rounded-lg border bg-card px-3 py-2 transition-colors ${
+              wf.live ? 'hover:bg-muted/30 hover:border-blue-300 cursor-pointer' : 'opacity-75 cursor-default'
+            }`}
           >
             <div className="flex items-center gap-1.5 text-xs font-medium">
               {wf.icon}
               {wf.name}
-              <span className="ml-auto inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-1.5 py-[1px] text-[9px] uppercase tracking-wide text-amber-700">
-                <Clock className="h-2.5 w-2.5" />
-                Coming soon
-              </span>
+              {wf.live ? (
+                <span className="ml-auto inline-flex items-center gap-1 rounded-full border border-green-200 bg-green-50 px-1.5 py-[1px] text-[9px] uppercase tracking-wide text-green-700">
+                  Live
+                </span>
+              ) : (
+                <span className="ml-auto inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-1.5 py-[1px] text-[9px] uppercase tracking-wide text-amber-700">
+                  <Clock className="h-2.5 w-2.5" />
+                  Coming soon
+                </span>
+              )}
             </div>
             <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
               {wf.description}
             </p>
-            <p className="mt-1.5 text-[10px] text-muted-foreground/80">
-              Planned cost: {wf.credits}
-            </p>
-          </div>
+            <div className="mt-1.5 flex items-center justify-between">
+              <span className="text-[10px] text-muted-foreground/80">
+                {wf.live ? 'Cost' : 'Planned cost'}: {wf.credits}
+              </span>
+              {wf.live && (
+                <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-blue-600">
+                  <ExternalLink className="h-2.5 w-2.5" />
+                  Open report
+                </span>
+              )}
+            </div>
+          </button>
         ))}
       </div>
 

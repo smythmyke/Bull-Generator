@@ -499,6 +499,87 @@ export async function fetchDossierSummary(patentNumber: string): Promise<Dossier
   return callAI<DossierSummary>('/dossier-summary', { patentNumber });
 }
 
+// ── Legal Intelligence bundle (EXT-ODP-1) ────────────────────────────────
+// One call assembles the 9 net-new ODP/PTAB/litigation slices. Charged once
+// (~10 credits) on a fresh fetch; 24h cache is free. Each slice may carry its
+// own { error } without sinking the bundle.
+export interface LegalStatusSlice { patentNumber?: string; inForce?: boolean; statusLabel?: string; lastEventDate?: string; maintenanceEvents?: Array<{ code?: string; date?: string; description?: string }>; error?: string }
+export interface TermSlice { patentNumber?: string; grantDate?: string; patentTermAdjustmentDays?: number; adjustedExpirationDate?: string; expirationDate?: string; error?: string }
+export interface ChallengesSlice { patentNumber?: string; challengeCount?: number; challenges?: Array<{ trialNumber?: string; type?: string; petitioner?: string; owner?: string; filingDate?: string; trialStatusCategory?: string; outcome?: string }>; error?: string }
+export interface LitigationSlice { patentNumber?: string; caseCount?: number; cases?: Array<{ caseNumber?: string; court?: string; dateFiled?: string; cause?: string; plaintiffs?: string[]; defendants?: string[] }>; error?: string }
+export interface AssignmentsSlice { patentNumber?: string; currentAssignee?: string; assignmentCount?: number; assignments?: Array<{ reelFrame?: string; conveyanceText?: string; recordedDate?: string; assignors?: Array<{ name?: string }> | string[]; assignees?: string[] }>; error?: string }
+export interface TimelineSlice { patentNumber?: string; events?: Array<{ date?: string; code?: string; description?: string }>; error?: string }
+export interface AttorneySlice { patentNumber?: string; customerNumber?: string; docketNumber?: string; attorneyCount?: number; attorneys?: Array<{ name?: string; registrationNumber?: string; active?: boolean }>; error?: string }
+export interface EntityStatusSlice { patentNumber?: string; smallEntity?: boolean; category?: string; error?: string }
+export interface PregrantSlice { patentNumber?: string; publicationNumber?: string; publicationDate?: string; error?: string }
+
+export interface LegalBundle {
+  patentNumber: string;
+  generatedAt: string;
+  cached: boolean;
+  legalStatus: LegalStatusSlice;
+  term: TermSlice;
+  challenges: ChallengesSlice;
+  litigation: LitigationSlice;
+  assignments: AssignmentsSlice;
+  prosecutionTimeline: TimelineSlice;
+  attorney: AttorneySlice;
+  entityStatus: EntityStatusSlice;
+  pregrant: PregrantSlice;
+}
+
+export async function fetchLegalBundle(patentNumber: string): Promise<LegalBundle> {
+  return callAI<LegalBundle>('/legal-bundle', { patentNumber });
+}
+
+// ── Patent Risk Profile (DD-1) ───────────────────────────────────────────
+export interface RiskSignals {
+  inForce: boolean | null;
+  expirationDate: string;
+  challengeCount: number;
+  survivedChallenges: boolean | null;
+  litigationCount: number;
+  currentAssignee: string;
+}
+export interface RiskProfile {
+  patentNumber: string;
+  generatedAt: string;
+  cached: boolean;
+  verdict: { riskLabel: 'Low' | 'Moderate' | 'High'; rationale: string; signals: RiskSignals };
+  legal: LegalBundle;
+  disclaimer: string;
+}
+
+export async function fetchRiskProfile(patentNumber: string): Promise<RiskProfile> {
+  return callAI<RiskProfile>('/risk-profile', { patentNumber });
+}
+
+// ── Company litigation reverse-lookup (EXT-ODP-1, ToolsTab) ───────────────
+export interface CompanyLitigationCase {
+  role?: string;
+  caseNumber?: string;
+  court?: string;
+  dateFiled?: string;
+  cause?: string;
+  patents?: string[];
+  opposing?: string[];
+}
+export interface CompanyLitigation {
+  query?: string;
+  matchedName?: string;
+  displayNames?: string[];
+  caseCount?: number;
+  asPlaintiffCount?: number;
+  asDefendantCount?: number;
+  cases?: CompanyLitigationCase[];
+  related?: Array<{ name: string; caseCount: number }>;
+  suggestions?: Array<{ name: string; caseCount: number }>;
+}
+
+export async function fetchCompanyLitigation(company: string, limit = 50): Promise<CompanyLitigation> {
+  return callAI<CompanyLitigation>('/company-litigation', { company, limit });
+}
+
 // ── Claim Chart § 12 ─────────────────────────────────────────────────────
 
 export type ClaimStatus = 'allowed' | 'rejected' | 'pending' | 'unknown';

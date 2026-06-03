@@ -138,6 +138,7 @@ module.exports = (env, argv) => {
       main: './src/index.tsx',
       results: './src/results/index.tsx',
       patent: './src/patent/index.tsx',
+      report: './src/report/index.tsx',
       background: './src/background/index.ts',
       content: './src/content/index.ts',
     },
@@ -193,6 +194,11 @@ module.exports = (env, argv) => {
         filename: 'patent.html',
         chunks: ['patent'],
       }),
+      new HtmlWebpackPlugin({
+        template: './public/report.html',
+        filename: 'report.html',
+        chunks: ['report'],
+      }),
       new CopyWebpackPlugin({
         patterns: [
           { from: 'manifest.json', to: 'manifest.json' },
@@ -202,7 +208,7 @@ module.exports = (env, argv) => {
       // Prevent async chunks that use createElement("script") for dynamic loading
       // which violates Chrome MV3 remotely hosted code policy
       new webpack.optimize.LimitChunkCountPlugin({
-        maxChunks: 6, // 5 entry points + 1 shared vendors chunk
+        maxChunks: 7, // 6 entry points + 1 shared vendors chunk
       }),
       // Sanitize remaining MV3-violating patterns from third-party code
       new MV3SanitizePlugin(),
@@ -214,7 +220,7 @@ module.exports = (env, argv) => {
             test: /[\\/]node_modules[\\/]/,
             name: 'vendors',
             chunks: (chunk) =>
-              chunk.name === 'main' || chunk.name === 'results' || chunk.name === 'patent',
+              chunk.name === 'main' || chunk.name === 'results' || chunk.name === 'patent' || chunk.name === 'report',
           },
         },
       },

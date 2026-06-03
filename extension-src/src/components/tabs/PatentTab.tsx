@@ -12,6 +12,7 @@ import {
   XCircle,
   Clock,
   Target,
+  Scale,
 } from 'lucide-react';
 import { fetchPatentDossier, PatentDossier, PatentStatus } from '../../services/apiService';
 import { useCreditGate } from '../../hooks/useCreditGate';
@@ -284,6 +285,24 @@ const PatentTab: React.FC = () => {
             Open full dossier
             <span className="ml-2 text-[9px] uppercase tracking-wide opacity-70">~3 credits</span>
           </Button>
+
+          {/* Legal Intelligence teaser → opens the full dossier at §14 */}
+          <button
+            onClick={() => {
+              const url = chrome.runtime.getURL(
+                `patent.html?number=${encodeURIComponent(dossier.patentNumber)}#legal-intelligence`
+              );
+              chrome.tabs.create({ url });
+            }}
+            className="w-full mt-2 flex items-start gap-2 text-left px-2.5 py-2 rounded-md border border-blue-200 bg-blue-50/60 hover:bg-blue-50 transition-colors"
+            title="PTAB challenges, litigation, ownership & term — loads in the full dossier (§14)."
+          >
+            <Scale className="h-3.5 w-3.5 text-blue-600 mt-0.5 shrink-0" />
+            <span className="text-[11px] text-slate-600 leading-snug">
+              <b className="text-slate-800">Legal Intelligence</b> — PTAB validity challenges, litigation history,
+              chain of title &amp; term. Load it in the full dossier (§14). <span className="text-blue-600 font-medium">Open →</span>
+            </span>
+          </button>
         </div>
       )}
 

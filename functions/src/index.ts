@@ -24,6 +24,8 @@ import {
 } from "./odp/odpDossier";
 import {handleChallengesRequest} from "./odp/ptab";
 import {handleLegalStatusRequest} from "./odp/legalStatus";
+import {handleLegalBundleRequest} from "./odp/legalBundle";
+import {handleRiskProfileRequest} from "./odp/riskProfile";
 import {handleAssignmentsRequest} from "./odp/assignments";
 import {handleLitigationRequest, handleCompanyLitigationRequest} from "./litigation";
 import {tryResolveRapidApi, applyRapidApiBilling} from "./rapidapi";
@@ -55,6 +57,8 @@ import {handleSearchExecuteRequest, handleSearchQueryRequest} from "./searchExec
 
 const DOSSIER_CREDIT_COST = 3;
 const OA_ANALYSIS_CREDIT_COST = 1;
+const LEGAL_BUNDLE_CREDIT_COST = 10; // one "Load legal intelligence" bundle; 24h-cached free
+const RISK_PROFILE_CREDIT_COST = 40; // DD-1 one-shot: legal-bundle + dossier header + AI verdict
 
 admin.initializeApp();
 
@@ -146,6 +150,8 @@ function scopeForPath(path: string): string | null {
   if (path === "/attorney") return "dossier";         // attorneys of record
   if (path === "/entity-status") return "dossier";    // small/micro/large
   if (path === "/pregrant-pub") return "dossier";     // as-filed publication
+  if (path === "/legal-bundle") return "dossier";     // all per-patent legal data, one call
+  if (path === "/risk-profile") return "dossier";     // legal-bundle + dossier header + AI verdict
   if (path === "/cpc") return "dossier";
   if (path === "/cpc-suggest") return "dossier";
   if (path === "/search-execute" || path === "/search-query") return "search";
@@ -581,6 +587,66 @@ export const ai = functions
         }
         res.status(200).json({data: result});
         await logApiUsageIfKey(ctx);
+        return;
+      }
+
+      // Legal-intelligence bundle — one call fans out the 9 per-patent
+      // legal/enrichment endpoints. Charged once on a fresh fetch; 24h cache
+      // is free (mirrors /patent-dossier). Powers the extension "Legal
+      // Intelligence" cluster and the DD-1 risk profile.
+      if (path === "/legal-bundle") {
+        const db = admin.firestore();
+        const rl = await checkRateLimitFor(ctx);
+        if (rl) { sendRateLimit(res, rl.retryAfterSeconds); return; }
+        const result = await handleLegalBundleRequest(req.body);
+        if (result.error) {
+          const statusCode = result.code === "invalid_number" ? 400 :
+            result.code === "not_found" ? 404 :
+            result.code === "rate_limited" ? 429 : 502;
+          res.status(statusCode).json({error: result.error, code: result.code});
+          await logApiUsageIfKey(ctx, { isError: true });
+          return;
+        }
+        // Extension §14 "Legal Intelligence" is free for signed-in users; the
+        // metered tier is the DD-1 risk profile (AI verdict) + marketplace API.
+        if (result.bundle && !result.bundle.cached && ctx.source !== "firebase") {
+          const deductResult = await useCredit(
+            db, ctx.uid, `legal-bundle:${result.bundle.patentNumber}`, LEGAL_BUNDLE_CREDIT_COST, platformSource
+          );
+          res.status(200).json({data: result.bundle, credits: deductResult});
+          await logApiUsageIfKey(ctx, { creditsUsed: LEGAL_BUNDLE_CREDIT_COST });
+        } else {
+          res.status(200).json({data: result.bundle});
+          await logApiUsageIfKey(ctx);
+        }
+        return;
+      }
+
+      // Patent Risk Profile (DD-1) — legal-bundle + an AI verdict (risk label +
+      // rationale). Flat-priced, charged once on a fresh fetch; 24h cache free.
+      if (path === "/risk-profile") {
+        const db = admin.firestore();
+        const rl = await checkRateLimitFor(ctx);
+        if (rl) { sendRateLimit(res, rl.retryAfterSeconds); return; }
+        const result = await handleRiskProfileRequest(req.body);
+        if (result.error) {
+          const statusCode = result.code === "invalid_number" ? 400 :
+            result.code === "not_found" ? 404 :
+            result.code === "rate_limited" ? 429 : 502;
+          res.status(statusCode).json({error: result.error, code: result.code});
+          await logApiUsageIfKey(ctx, { isError: true });
+          return;
+        }
+        if (result.riskProfile && !result.riskProfile.cached) {
+          const deductResult = await useCredit(
+            db, ctx.uid, `risk-profile:${result.riskProfile.patentNumber}`, RISK_PROFILE_CREDIT_COST, platformSource
+          );
+          res.status(200).json({data: result.riskProfile, credits: deductResult});
+          await logApiUsageIfKey(ctx, { creditsUsed: RISK_PROFILE_CREDIT_COST });
+        } else {
+          res.status(200).json({data: result.riskProfile});
+          await logApiUsageIfKey(ctx);
+        }
         return;
       }
 
