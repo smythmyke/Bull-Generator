@@ -56,10 +56,11 @@
         <tr><td><code>claims</code></td><td>All claims with full text (independent + dependent)</td><td>1 credit (cold); free from cache</td></tr>
         <tr><td><code>prosecution</code></td><td>USPTO file-wrapper documents: office actions, responses, amendments, notices</td><td>Free</td></tr>
         <tr><td><code>challenges</code></td><td>PTAB validity challenges (IPR/PGR/CBM): petitioner, dates, outcome</td><td>Free</td></tr>
-        <tr><td><code>litigation</code></td><td>District-court infringement suits (USPTO litigation dataset, 2003–2020 coverage)</td><td>Free</td></tr>
-        <tr><td><code>examiner</code></td><td>Assigned examiner's art unit, allowance rate, average pendency</td><td>Free</td></tr>
+        <tr><td><code>litigation</code></td><td>District-court infringement suits (USPTO litigation dataset, 2003–2020 coverage)</td><td>2 credits</td></tr>
+        <tr><td><code>examiner</code></td><td>Assigned examiner's art unit, allowance rate, average pendency</td><td>2 credits</td></tr>
         <tr><td><code>assignments</code></td><td>Recorded chain of title: conveyances, reel/frame, current assignee</td><td>Free</td></tr>
         <tr><td><code>legal_status</code></td><td>In force vs lapsed/expired, anticipated expiration, maintenance-fee history</td><td>Free</td></tr>
+        <tr><td><code>risk_profile</code></td><td>Due-diligence risk verdict (Low/Moderate/High + rationale) from the patent's full legal record</td><td>40 credits (fresh); free from 24h cache</td></tr>
         <tr><td><code>balance</code></td><td>Your credit balance and subscription status</td><td>Free</td></tr>
     </table>
 
@@ -82,7 +83,7 @@
     <h2>Troubleshooting</h2>
     <ul>
         <li><strong>“Authentication required” / tools missing:</strong> make sure the connector is toggled ON for the current conversation (tools menu near the message box), and that you completed the email sign-in when adding it.</li>
-        <li><strong>“Not enough credits”:</strong> only <code>dossier</code> and <code>claims</code> ever charge credits, and only on fresh fetches. Check <code>balance</code>; credits can be added from your account.</li>
+        <li><strong>“Not enough credits”:</strong> paid tools are <code>dossier</code> (3, fresh only), <code>claims</code> (1, cold only), <code>litigation</code> (2), <code>examiner</code> (2), and <code>risk_profile</code> (40, fresh only). Check <code>balance</code>; credits can be added from your account. New accounts include free starter credits.</li>
         <li><strong>“No US patent … found in USPTO ODP”:</strong> the patent may pre-date ODP coverage (applications filed before 2001) or the number may be malformed — use the canonical form, e.g. <code>US10867416B2</code>.</li>
         <li><strong>Disconnect / reconnect:</strong> Settings → Connectors → AI Patent Search Generator → Disconnect, then add again and re-run the email sign-in.</li>
     </ul>

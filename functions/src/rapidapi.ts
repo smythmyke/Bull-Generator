@@ -76,6 +76,7 @@ const RAPIDAPI_CREDITS: Readonly<Record<string, number>> = {
   "/litigation": 35,
   "/company-litigation": 35,
   // Enrichment
+  "/examiner-stats": 20,     // computed aggregation (pricing research 2026-06-07)
   "/legal-status": 10,
   "/assignments": 10,
   "/term": 10,
@@ -85,7 +86,7 @@ const RAPIDAPI_CREDITS: Readonly<Record<string, number>> = {
   "/pregrant-pub": 15,
   "/legal-bundle": 75,      // all 9 per-patent legal slices in one call
   "/risk-profile": 90,      // legal-bundle + AI risk verdict (DD-1)
-  // similar / citations / family / examiner-stats / prosecution-history / cpc* = 0 (free)
+  // similar / citations / family / prosecution-history / cpc* = 0 (free)
 };
 
 export function rapidApiCreditsFor(path: string): number {

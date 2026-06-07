@@ -8,12 +8,14 @@
  * CommonJS). Ported from JackpotKeywords' mcp.ts (proven end-to-end via Claude
  * 2026-06-03; runbook gotchas #1-16 applied).
  *
- * SCOPE — curated connector surface (9 tools), NOT the full 26-tool stdio set:
+ * SCOPE — curated connector surface (10 tools), NOT the full 26-tool stdio set:
  * the directory's relevance signal is tool descriptions, and a chat tools menu
- * with 26 entries is noise. Raw-USPTO-data lookups only (the category wedge):
+ * with 26 entries is noise. Raw-USPTO-data lookups (the category wedge) plus
+ * the premium DD-1 risk profile:
  *   dossier (3cr fresh / 24h cache free), claims (1cr cold / cache free),
- *   prosecution, challenges (PTAB), litigation, examiner, assignments,
- *   legal_status, balance — everything but dossier/claims is free.
+ *   litigation (2cr), examiner (2cr), risk_profile (40cr fresh / cache free),
+ *   prosecution, challenges (PTAB), assignments, legal_status, balance (free).
+ * Pricing per research/pricing-legal-intelligence-2026-06-07.md.
  *
  * AUTH — WorkOS AuthKit OAuth 2.1 (see mcpOauth.ts). 401 + WWW-Authenticate on
  * EVERY unauthenticated JSON-RPC POST including `initialize` (runbook gotcha
@@ -42,6 +44,7 @@ import {handleChallengesRequest} from "./odp/ptab";
 import {handleLegalStatusRequest} from "./odp/legalStatus";
 import {handleAssignmentsRequest} from "./odp/assignments";
 import {handleLitigationRequest} from "./litigation";
+import {handleRiskProfileRequest} from "./odp/riskProfile";
 import {getBalance, useCredit, initCredits} from "./credits";
 
 const SERVER_NAME = "patent-search";
@@ -49,6 +52,8 @@ const SERVER_VERSION = "0.1.0";
 
 const DOSSIER_CREDIT_COST = 3; // mirrors index.ts — fresh dossier fetch
 const CLAIMS_CREDIT_COST = 1; // mirrors index.ts — cold claims fetch
+const LEGAL_LOOKUP_CREDIT_COST = 2; // litigation + examiner (scarce/computed — see index.ts)
+const RISK_PROFILE_CREDIT_COST = 40; // DD-1 premium: legal bundle + AI verdict; 24h cache free
 
 // Protocol versions we know how to speak. We echo the client's requested
 // version when it's one of these; otherwise we answer with our latest.
@@ -236,7 +241,7 @@ const TOOLS = [
       "Get the US district-court infringement litigation history for a patent: who sued whom, in which " +
       "court, over what (cause of action), with filing dates. Backed by the USPTO Patent Litigation " +
       "Dataset. Coverage: comprehensive 2003-2016, partial to 2020 (no cases after 2020). Empty result = " +
-      "not litigated on record in that window. Free, public-record.",
+      "not litigated on record in that window. Public-record. Costs 2 credits per lookup.",
     inputSchema: {
       type: "object",
       properties: {
@@ -258,7 +263,8 @@ const TOOLS = [
     name: "examiner",
     description:
       "Get the assigned USPTO examiner's name, art unit, total applications handled, allowance rate, and " +
-      "average pendency for a US patent. Useful for prosecution strategy and risk assessment. Free.",
+      "average pendency for a US patent. Useful for prosecution strategy and risk assessment. " +
+      "Costs 2 credits per lookup.",
     inputSchema: {
       type: "object",
       properties: {patentNumber: PATENT_NUMBER_PROP},
@@ -313,11 +319,34 @@ const TOOLS = [
     },
   },
   {
+    name: "risk_profile",
+    description:
+      "One-shot patent risk profile (due-diligence grade): aggregates the patent's full legal record " +
+      "(legal status, PTAB challenges, litigation, assignments, term) and returns an AI risk verdict — " +
+      "Low/Moderate/High with a plain-English rationale and the underlying signals. The premium " +
+      "due-diligence tool. Costs 40 credits on a fresh run; repeat calls within 24 hours read from cache " +
+      "and are free. Factual public-record reporting — not legal advice.",
+    inputSchema: {
+      type: "object",
+      properties: {patentNumber: PATENT_NUMBER_PROP},
+      required: ["patentNumber"],
+      additionalProperties: false,
+    },
+    annotations: {
+      title: "Patent Risk Profile (AI)",
+      readOnlyHint: true,
+      destructiveHint: false,
+      openWorldHint: true,
+      idempotentHint: false,
+    },
+  },
+  {
     name: "balance",
     description:
       "Return the current credit balance and subscription status for the authenticated AI Patent Search " +
-      "Generator account. Use this before calling `dossier` (3 credits fresh) or `claims` (1 credit cold) " +
-      "to verify credits are available; all other tools here are free.",
+      "Generator account. Use this before calling paid tools — dossier (3 credits fresh), claims " +
+      "(1 credit cold), litigation (2), examiner (2), risk_profile (40 fresh) — to verify credits are " +
+      "available; prosecution, challenges, assignments, and legal_status are free.",
     inputSchema: {
       type: "object",
       properties: {},
@@ -658,7 +687,7 @@ async function runChallengesTool(args: Record<string, unknown>): Promise<ToolRes
   return withCappedStructured(lines.join("\n"), data as Record<string, unknown>);
 }
 
-async function runLitigationTool(args: Record<string, unknown>): Promise<ToolResult> {
+async function runLitigationTool(args: Record<string, unknown>, auth: McpAuth): Promise<ToolResult> {
   const patentNumber = patentNumberArg(args);
   if (!patentNumber) return toolError("patentNumber is required (e.g. US8724622B2).");
   const body: Record<string, unknown> = {patentNumber};
@@ -666,6 +695,9 @@ async function runLitigationTool(args: Record<string, unknown>): Promise<ToolRes
 
   const result = await handleLitigationRequest(body);
   if (result.error) return handlerError(result, `litigation history for ${patentNumber}`);
+
+  const charge = await chargeCredits(auth.uid, `litigation:${patentNumber}`, LEGAL_LOOKUP_CREDIT_COST);
+  if (!charge.ok) return toolError(charge.message);
   const data = result as unknown as {
     patentNumber?: string;
     caseCount?: number;
@@ -684,12 +716,13 @@ async function runLitigationTool(args: Record<string, unknown>): Promise<ToolRes
       `  ${c.dateFiled} ${c.caseNumber} (${c.court}) — ${c.plaintiffs[0] || c.caseName} v ${c.defendants[0] || "?"} — ${c.cause}`),
     cs.length > 50 ? `  … and ${cs.length - 50} more` : null,
     data.coverageNote ? `Note: ${data.coverageNote}` : null,
+    `(2 credits charged; ${charge.remaining} remaining)`,
   ].filter((s): s is string => s !== null);
 
   return withCappedStructured(lines.join("\n"), data as Record<string, unknown>);
 }
 
-async function runExaminerTool(args: Record<string, unknown>): Promise<ToolResult> {
+async function runExaminerTool(args: Record<string, unknown>, auth: McpAuth): Promise<ToolResult> {
   const patentNumber = patentNumberArg(args);
   if (!patentNumber) return toolError("patentNumber is required (e.g. US10867416B2).");
 
@@ -698,6 +731,10 @@ async function runExaminerTool(args: Record<string, unknown>): Promise<ToolResul
 
   const result = await handleExaminerStatsRequest({applicationNumber: resolved.applicationNumber});
   if (result.error || !result.stats) return handlerError(result, `examiner stats for ${patentNumber}`);
+
+  const charge = await chargeCredits(auth.uid, `examiner-stats:${patentNumber}`, LEGAL_LOOKUP_CREDIT_COST);
+  if (!charge.ok) return toolError(charge.message);
+
   const stats = result.stats;
   const lines = [
     `Examiner for ${patentNumber} (application ${stats.applicationNumber}): ${stats.examinerName || "unknown"}`,
@@ -706,9 +743,47 @@ async function runExaminerTool(args: Record<string, unknown>): Promise<ToolResul
     `Allowance rate: ${(stats.allowanceRate * 100).toFixed(1)}%`,
     `Average pendency: ${Math.round(stats.avgPendencyDays / 30.44)} months ` +
       `(${stats.avgPendencyDays} days, sample of ${stats.pendencySampleSize})`,
+    `(2 credits charged; ${charge.remaining} remaining)`,
   ].filter((s): s is string => s !== null);
 
   return withCappedStructured(lines.join("\n"), stats as unknown as Record<string, unknown>);
+}
+
+async function runRiskProfileTool(args: Record<string, unknown>, auth: McpAuth): Promise<ToolResult> {
+  const patentNumber = patentNumberArg(args);
+  if (!patentNumber) return toolError("patentNumber is required (e.g. US10867416B2).");
+
+  const result = await handleRiskProfileRequest({patentNumber});
+  if (result.error || !result.riskProfile) return handlerError(result, `risk profile for ${patentNumber}`);
+  const rp = result.riskProfile;
+
+  let billingLine = "(served from 24h cache — free)";
+  if (!rp.cached) {
+    const charge = await chargeCredits(auth.uid, `risk-profile:${rp.patentNumber}`, RISK_PROFILE_CREDIT_COST);
+    if (!charge.ok) return toolError(charge.message);
+    billingLine = `(fresh run — ${RISK_PROFILE_CREDIT_COST} credits charged; ${charge.remaining} remaining. Repeat calls within 24h are free.)`;
+  }
+
+  const s = rp.verdict.signals;
+  const lines = [
+    `Risk profile for ${rp.patentNumber}: ${rp.verdict.riskLabel.toUpperCase()} RISK`,
+    "",
+    rp.verdict.rationale,
+    "",
+    "Signals:",
+    `  • In force: ${s.inForce === true ? "yes" : s.inForce === false ? "no" : "unknown"}` +
+      (s.expirationDate ? ` (anticipated expiration ${s.expirationDate})` : ""),
+    `  • PTAB challenges: ${s.challengeCount}` +
+      (s.survivedChallenges === true ? " (patent survived at least one)" :
+        s.survivedChallenges === false ? " (no survivals on record)" : ""),
+    `  • District-court suits: ${s.litigationCount}`,
+    `  • Current assignee: ${s.currentAssignee || "unknown"}`,
+    "",
+    rp.disclaimer,
+    billingLine,
+  ];
+
+  return withCappedStructured(lines.join("\n"), rp as unknown as Record<string, unknown>);
 }
 
 async function runAssignmentsTool(args: Record<string, unknown>): Promise<ToolResult> {
@@ -769,7 +844,8 @@ async function runBalanceTool(auth: McpAuth): Promise<ToolResult> {
     data.subscription ?
       `Subscription: ${data.subscription.planId} (${data.subscription.status})` :
       "Subscription: none",
-    "Costs: dossier 3 credits (fresh fetch; 24h cache free), claims 1 credit (cold fetch); all other tools here are free.",
+    "Costs: dossier 3 (fresh; 24h cache free), claims 1 (cold), litigation 2, examiner 2, " +
+      "risk_profile 40 (fresh; 24h cache free); prosecution, challenges, assignments, legal_status are free.",
   ];
   return withCappedStructured(lines.join("\n"), data as unknown as Record<string, unknown>);
 }
@@ -786,10 +862,11 @@ async function callTool(
     case "claims": return runClaimsTool(args, auth);
     case "prosecution": return runProsecutionTool(args);
     case "challenges": return runChallengesTool(args);
-    case "litigation": return runLitigationTool(args);
-    case "examiner": return runExaminerTool(args);
+    case "litigation": return runLitigationTool(args, auth);
+    case "examiner": return runExaminerTool(args, auth);
     case "assignments": return runAssignmentsTool(args);
     case "legal_status": return runLegalStatusTool(args);
+    case "risk_profile": return runRiskProfileTool(args, auth);
     case "balance": return runBalanceTool(auth);
     default: return toolError(`Unknown tool: ${name}`);
   }

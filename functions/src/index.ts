@@ -59,6 +59,13 @@ const DOSSIER_CREDIT_COST = 3;
 const OA_ANALYSIS_CREDIT_COST = 1;
 const LEGAL_BUNDLE_CREDIT_COST = 10; // one "Load legal intelligence" bundle; 24h-cached free
 const RISK_PROFILE_CREDIT_COST = 40; // DD-1 one-shot: legal-bundle + dossier header + AI verdict
+// Scarce/computed lookups (pricing research 2026-06-07): litigation has no
+// complete free public source (RECAP cache misses cost PACER fees) and
+// examiner stats are cross-corpus computation, not a raw ODP passthrough.
+// 2cr per call on API/MCP surfaces; the extension (Firebase token) stays free
+// per the 2026-05-31 §14 Legal Intelligence decision. See
+// research/pricing-legal-intelligence-2026-06-07.md.
+const LEGAL_LOOKUP_CREDIT_COST = 2;
 
 admin.initializeApp();
 
@@ -559,8 +566,11 @@ export const ai = functions
       }
 
       // Litigation — district-court infringement suits (USPTO PTLITIG dataset,
-      // pre-ingested to Firestore). Free; empty result = not litigated on record.
+      // pre-ingested to Firestore). 2cr per call for API/MCP (scarce data — no
+      // complete free public source); free in the extension. Empty result =
+      // not litigated on record.
       if (path === "/litigation") {
+        const db = admin.firestore();
         const rl = await checkRateLimitFor(ctx);
         if (rl) { sendRateLimit(res, rl.retryAfterSeconds); return; }
         const result = await handleLitigationRequest(req.body);
@@ -569,14 +579,24 @@ export const ai = functions
           await logApiUsageIfKey(ctx, { isError: true });
           return;
         }
-        res.status(200).json({data: result});
-        await logApiUsageIfKey(ctx);
+        if (ctx.source !== "firebase") {
+          const deductResult = await useCredit(
+            db, ctx.uid, "litigation", LEGAL_LOOKUP_CREDIT_COST, platformSource
+          );
+          res.status(200).json({data: result, credits: deductResult});
+          await logApiUsageIfKey(ctx, { creditsUsed: LEGAL_LOOKUP_CREDIT_COST });
+        } else {
+          res.status(200).json({data: result});
+          await logApiUsageIfKey(ctx);
+        }
         return;
       }
 
-      // Company -> litigation (reverse lookup). Free; empty/suggestions when no
-      // exact match. Input: { company, limit? }.
+      // Company -> litigation (reverse lookup). 2cr per call for API/MCP, free
+      // in the extension. Empty/suggestions when no exact match.
+      // Input: { company, limit? }.
       if (path === "/company-litigation") {
+        const db = admin.firestore();
         const rl = await checkRateLimitFor(ctx);
         if (rl) { sendRateLimit(res, rl.retryAfterSeconds); return; }
         const result = await handleCompanyLitigationRequest(req.body);
@@ -585,8 +605,16 @@ export const ai = functions
           await logApiUsageIfKey(ctx, { isError: true });
           return;
         }
-        res.status(200).json({data: result});
-        await logApiUsageIfKey(ctx);
+        if (ctx.source !== "firebase") {
+          const deductResult = await useCredit(
+            db, ctx.uid, "company-litigation", LEGAL_LOOKUP_CREDIT_COST, platformSource
+          );
+          res.status(200).json({data: result, credits: deductResult});
+          await logApiUsageIfKey(ctx, { creditsUsed: LEGAL_LOOKUP_CREDIT_COST });
+        } else {
+          res.status(200).json({data: result});
+          await logApiUsageIfKey(ctx);
+        }
         return;
       }
 
@@ -821,8 +849,11 @@ export const ai = functions
       }
 
       // Examiner stats — examiner identity + aggregate stats (allowance rate,
-      // avg pendency) from USPTO ODP. Free, auto-loaded with the dossier.
+      // avg pendency) from USPTO ODP. 2cr per call for API/MCP (computed
+      // cross-corpus aggregation, not a raw lookup); free in the extension,
+      // where it auto-loads with the dossier.
       if (path === "/examiner-stats") {
+        const db = admin.firestore();
         const rl = await checkRateLimitFor(ctx);
         if (rl) { sendRateLimit(res, rl.retryAfterSeconds); return; }
         const result = await handleExaminerStatsRequest(req.body);
@@ -836,8 +867,16 @@ export const ai = functions
           await logApiUsageIfKey(ctx, { isError: true });
           return;
         }
-        res.status(200).json({data: result.stats});
-        await logApiUsageIfKey(ctx);
+        if (ctx.source !== "firebase") {
+          const deductResult = await useCredit(
+            db, ctx.uid, "examiner-stats", LEGAL_LOOKUP_CREDIT_COST, platformSource
+          );
+          res.status(200).json({data: result.stats, credits: deductResult});
+          await logApiUsageIfKey(ctx, { creditsUsed: LEGAL_LOOKUP_CREDIT_COST });
+        } else {
+          res.status(200).json({data: result.stats});
+          await logApiUsageIfKey(ctx);
+        }
         return;
       }
 
