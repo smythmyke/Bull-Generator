@@ -1,0 +1,51 @@
+{
+  "display_information": {
+    "name": "AI Patent Search Generator",
+    "description": "Patent dossiers, prior-art search, prosecution analysis, and CPC lookups from any Slack channel.",
+    "background_color": "#1A1A2E"
+  },
+  "features": {
+    "bot_user": {
+      "display_name": "AI Patent Search Generator",
+      "always_online": true
+    },
+    "slash_commands": [
+      { "command": "/balance", "url": "https://us-central1-solicitation-matcher-extension.cloudfunctions.net/slackBot/command", "description": "View your credit balance and subscription status", "should_escape": false },
+      { "command": "/dossier", "url": "https://us-central1-solicitation-matcher-extension.cloudfunctions.net/slackBot/command", "description": "Full patent intelligence - bibliographic, claims, citations, family, examiner", "usage_hint": "[patent number]", "should_escape": false },
+      { "command": "/claims", "url": "https://us-central1-solicitation-matcher-extension.cloudfunctions.net/slackBot/command", "description": "Just the claims of a patent (lighter than /dossier)", "usage_hint": "[patent number]", "should_escape": false },
+      { "command": "/prosecution", "url": "https://us-central1-solicitation-matcher-extension.cloudfunctions.net/slackBot/command", "description": "USPTO file-wrapper documents (Office Actions, responses, amendments)", "usage_hint": "[patent number]", "should_escape": false },
+      { "command": "/examiner", "url": "https://us-central1-solicitation-matcher-extension.cloudfunctions.net/slackBot/command", "description": "Examiner stats - art unit, allowance rate, average pendency", "usage_hint": "[patent number]", "should_escape": false },
+      { "command": "/query", "url": "https://us-central1-solicitation-matcher-extension.cloudfunctions.net/slackBot/command", "description": "Generate a Boolean search query from a description (paste-ready)", "usage_hint": "[description of invention]", "should_escape": false },
+      { "command": "/similar", "url": "https://us-central1-solicitation-matcher-extension.cloudfunctions.net/slackBot/command", "description": "Google Patents similar-documents ranking for a patent", "usage_hint": "[patent number]", "should_escape": false },
+      { "command": "/citations", "url": "https://us-central1-solicitation-matcher-extension.cloudfunctions.net/slackBot/command", "description": "Backward and forward citations for a patent", "usage_hint": "[patent number]", "should_escape": false },
+      { "command": "/cpc", "url": "https://us-central1-solicitation-matcher-extension.cloudfunctions.net/slackBot/command", "description": "Look up a CPC classification code", "usage_hint": "[CPC code]", "should_escape": false },
+      { "command": "/claim-chart", "url": "https://us-central1-solicitation-matcher-extension.cloudfunctions.net/slackBot/command", "description": "Per-claim element chart with examiner-cited prior art mapped", "usage_hint": "[patent number]", "should_escape": false },
+      { "command": "/oa-analyze", "url": "https://us-central1-solicitation-matcher-extension.cloudfunctions.net/slackBot/command", "description": "AI-analyze a USPTO Office Action - rejections + cited art + arguments", "usage_hint": "[patent number]", "should_escape": false },
+      { "command": "/cpc-suggest", "url": "https://us-central1-solicitation-matcher-extension.cloudfunctions.net/slackBot/command", "description": "Suggest CPC codes from a plain-English tech description", "usage_hint": "[description of technology]", "should_escape": false },
+      { "command": "/patent-search", "url": "https://us-central1-solicitation-matcher-extension.cloudfunctions.net/slackBot/command", "description": "Execute a multi-strategy patent search against Google Patents", "usage_hint": "[description of invention]", "should_escape": false },
+      { "command": "/family", "url": "https://us-central1-solicitation-matcher-extension.cloudfunctions.net/slackBot/command", "description": "Patent family - continuations, divisionals, foreign counterparts", "usage_hint": "[patent number]", "should_escape": false }
+    ]
+  },
+  "oauth_config": {
+    "redirect_urls": [
+      "https://us-central1-solicitation-matcher-extension.cloudfunctions.net/slackBot/install/callback"
+    ],
+    "scopes": {
+      "bot": [
+        "commands",
+        "chat:write"
+      ]
+    }
+  },
+  "settings": {
+    "event_subscriptions": {
+      "request_url": "https://us-central1-solicitation-matcher-extension.cloudfunctions.net/slackBot/events",
+      "bot_events": [
+        "app_uninstalled"
+      ]
+    },
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": false,
+    "token_rotation_enabled": false
+  }
+}

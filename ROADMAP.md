@@ -1,6 +1,6 @@
 # ROADMAP — Bull-Generator
 
-**Last updated:** 2026-05-27
+**Last updated:** 2026-06-02
 **Scope:** Live Chrome extension (since Nov 2024) — AI Patent Search Generator. React + TypeScript + Firebase + Stripe. Surfaces: extension + REST API + MCP server (`patent-search-mcp-server`, npm + Official MCP Registry). Converted from Phase-structured roadmap on 2026-05-27. **For build status of every feature**, see [`research/patent-firm-features.md` Part 6](./research/patent-firm-features.md#part-6--build-status) — this file is the strategic/phased view.
 
 <!-- DASHBOARD-META
@@ -56,6 +56,12 @@ key_dates:
 - ⊘ MCP-SUB-4: MCP.so issue #2529 at `chatmcp/mcpso` — filed, awaiting. Check: `gh issue view 2529 --repo chatmcp/mcpso --json state`.
 - ✗ MCP-SUB-5: appcypher/awesome-mcp-servers — DROPPED, maintainer disabled PRs/issues 2026-05-26.
 - ☐ MCP-SUB-6: GovToolsPro MCP distribution followup — once GovToolsPro MCP ships (sibling project), replicate the 5-surface playbook. Reference: `~\.claude\projects\C--Projects-Bull-Generator\memory\project_govtoolspro_mcp_distribution_followup.md`.
+
+### MCP monetization & Claude Connector Directory (2026-06-02 dashboard review)
+*New surfaces from the MCP-monetization review — agent-to-agent payments + Anthropic's Connector Directory, neither of which any portfolio MCP does yet. **patent-search is the strongest x402 candidate in the portfolio** — autonomous legal-research agents calling prior-art/dossier/legal-status lookups mid-task are exactly the pay-per-call buyer.*
+- ☐ ANNOT-1: Add MCP tool annotations to all 11 tools — `readOnlyHint: true` on the search/dossier/lookup/legal-status/citation tools (all read-only against USPTO/GP data), `balance` read-only too; none are destructive. **Prereq for CONN-1** — missing annotations are the #1 Connector Directory rejection cause (~30%). Mirror into Smithery `.mcpb` + Glama manifests.
+- ☐ CONN-1: Submit `patent-search-mcp-server` to the **Claude Connector Directory** (`claude.com/docs/connectors/building/submission`, ~2wk review). **Streamlined plan (JackpotKeywords pilot proven end-to-end via Claude 2026-06-03): `planning/PLAN-CLAUDE-CONNECTOR.md`.** Build/test-ready: `functions/` (on `solicitation-matcher-extension`) hosts the remote endpoint — copy JK's `mcp.ts` + `mcpOAuth.ts` (jose-free WorkOS AuthKit OAuth), require auth at CONNECT, enable DCR+CIMD in WorkOS Connect→Configuration, ANNOT-1 (readOnlyHint on all 11). Privacy policy already exists. ⚠️ Add the endpoint behind the **direct CF URL** (not the inert hosting rewrite) and don't disrupt GovToolsPro prod (shared project — cross-project hosting tangle). **Public submission BLOCKED on a custom domain** (no DNS-controllable domain today → production AuthKit CNAME impossible; same as JK; staging fine for testing). High-fit: legal researchers live in Claude, thin category = strong relevance-based suggestion share.
+- ☐ X402-1: Add an x402 / HTTP-402-gated metered path for autonomous-agent pay-per-search. Stripe ships x402 for USDC on Base (Feb 2026) — stays inside the existing Stripe account; an MCP tool returns `402` to gate with zero JSON-RPC schema change. **Build after JK proves the pattern, but prioritize ahead of MarkItUp** — the agentic legal buyer + high per-transaction ceiling ($200–600/hr billers) make this the best M2M revenue fit. Meter the heavy workflow tools (DD-1 risk profile, FTO) per-call.
 
 ### Pricing/packaging validation (deferred)
 - ⊘ VALIDATE-1: Email/interview 5 patent professionals — blocked: low user base makes pricing-interview signal too weak. Building first, price-testing live.
