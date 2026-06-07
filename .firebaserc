@@ -5,8 +5,8 @@
   "targets": {
     "solicitation-matcher-extension": {
       "hosting": {
-        "default": [
-          "solicitation-matcher-extension"
+        "psg": [
+          "patent-search-generator"
         ]
       }
     }

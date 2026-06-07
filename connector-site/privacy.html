@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy Policy - AI Patent Search Generator</title>
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 {
+            color: #2c5282;
+            border-bottom: 2px solid #e2e8f0;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #2d3748;
+            margin-top: 30px;
+        }
+        .last-updated {
+            color: #718096;
+            font-style: italic;
+            margin-bottom: 30px;
+        }
+        .section {
+            margin-bottom: 30px;
+        }
+        ul {
+            padding-left: 20px;
+        }
+        li {
+            margin-bottom: 8px;
+        }
+        .footer {
+            margin-top: 50px;
+            padding-top: 20px;
+            border-top: 1px solid #e2e8f0;
+            color: #718096;
+        }
+    </style>
+</head>
+<body>
+    <h1>Privacy Policy for AI Patent Search Generator</h1>
+    <div class="last-updated">Last updated: June 7, 2026</div>
+
+    <div class="section">
+        <p>We are committed to protecting your privacy and personal data. This privacy policy explains how we collect, use, and protect your information when you use our Chrome extension, REST API, AI-assistant connectors (e.g. for Claude), or Slack app.</p>
+    </div>
+
+    <div class="section">
+        <h2>1. Data Collection</h2>
+        <p>We collect the following information:</p>
+        <ul>
+            <li>Email addresses for account creation and management</li>
+            <li>Authentication credentials for login purposes</li>
+            <li>Payment information through Stripe's secure processing</li>
+            <li>Search history and generated queries</li>
+            <li>Custom synonym preferences</li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h2>2. Data Usage</h2>
+        <p>Your data is used solely for the following purposes:</p>
+        <ul>
+            <li>Managing your account and subscription</li>
+            <li>Processing payments through Stripe</li>
+            <li>Saving and retrieving your search history</li>
+            <li>Customizing your search experience</li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h2>3. Data Storage</h2>
+        <ul>
+            <li>User authentication data is stored securely in Firebase</li>
+            <li>Payment information is processed and stored by Stripe</li>
+            <li>Search history and preferences are stored locally in your browser</li>
+            <li>Custom synonyms are stored in Firebase Firestore</li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h2>4. Third-Party Services</h2>
+        <p>We use the following third-party services:</p>
+        <ul>
+            <li>Firebase (Google Cloud) for authentication, data storage, and backend hosting</li>
+            <li>Stripe for payment processing</li>
+            <li>Google Gemini API for AI-driven query generation, claim analysis, and Office Action analysis</li>
+            <li>Google Patents (publicly accessible) for patent metadata, claims, citations, and family lookups</li>
+            <li>USPTO Open Data Portal (publicly accessible) for prosecution history and examiner statistics</li>
+            <li>Slack (only if you install our Slack app) — see Section 4.1</li>
+            <li>WorkOS (only if you connect via an AI assistant) — see Section 4.2</li>
+        </ul>
+        <p>All third-party services adhere to their own privacy policies and security standards.</p>
+    </div>
+
+    <div class="section">
+        <h2>4.1 Slack Integration (optional)</h2>
+        <p>If you install the AI Patent Search Generator Slack app in a Slack workspace, the following data is collected solely to make the slash commands work:</p>
+        <ul>
+            <li><strong>Workspace ID and name</strong> — to route slash command requests and label the API key minted for that workspace</li>
+            <li><strong>Slack user ID of the installer</strong> — to link the Slack install to the user's existing AI Patent Search Generator account for credit attribution</li>
+            <li><strong>Bot token</strong> — securely stored in Firestore; used only to post slash command responses back to the same workspace</li>
+            <li><strong>Slash command text</strong> — the patent numbers, descriptions, or CPC codes you pass to commands like <code>/dossier</code>, <code>/patent-search</code>, etc. This text is processed by the same backend pipeline as the Chrome extension</li>
+        </ul>
+        <p>We do <strong>not</strong> read channel messages, direct messages, user profiles beyond the installer's user ID, or any files. The Slack OAuth scopes we request are limited to <code>commands</code> (receive slash command invocations) and <code>chat:write</code> (post responses).</p>
+        <p>When you uninstall the app from a Slack workspace, the linked API key is automatically revoked and the install record is marked as revoked within a few seconds. To revoke manually: remove the app from your Slack workspace settings.</p>
+    </div>
+
+    <div class="section">
+        <h2>4.2 AI-Assistant Connectors (optional)</h2>
+        <p>If you connect AI Patent Search Generator to an AI assistant (such as Claude via the Claude Connector Directory), the following applies:</p>
+        <ul>
+            <li><strong>Sign-in</strong> is handled by WorkOS AuthKit using a one-time email code. We receive your verified email address, which we use to find or create your AI Patent Search Generator account. We do not receive or store a password.</li>
+            <li><strong>Tool-call inputs</strong> — the patent numbers and parameters the assistant sends on your behalf — are processed by the same backend pipeline as the Chrome extension and API, and are subject to the same data practices described above.</li>
+            <li><strong>Conversation content</strong> beyond the tool-call inputs is never sent to us; your conversations with the assistant remain with the assistant's provider under their privacy policy.</li>
+            <li><strong>Disconnecting</strong> the connector in the assistant stops all access; your account and credits remain available through the other surfaces.</li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h2>5. Data Protection</h2>
+        <ul>
+            <li>All data transmission is encrypted using HTTPS</li>
+            <li>We never sell your personal information</li>
+            <li>We do not share your data with unauthorized third parties</li>
+            <li>Payment information is handled directly by Stripe's secure platform</li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h2>6. User Rights</h2>
+        <p>You have the following rights regarding your data:</p>
+        <ul>
+            <li>Access your personal data</li>
+            <li>Request data deletion</li>
+            <li>Export your data</li>
+            <li>Cancel your subscription at any time</li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h2>7. Data Retention</h2>
+        <p>We retain your data for as long as your account is active. Upon account deletion, we will remove your personal data from our systems within 30 days, except where we are required to retain it for legal purposes.</p>
+    </div>
+
+    <div class="section">
+        <h2>8. Updates to Privacy Policy</h2>
+        <p>We may update this privacy policy from time to time. We will notify users of any material changes through the extension or via email.</p>
+    </div>
+
+    <div class="footer">
+        <p>For any privacy concerns or questions, please contact us at: <a href="mailto:smythmyke@gmail.com">smythmyke@gmail.com</a></p>
+        <p>AI Patent Search Generator</p>
+    </div>
+</body>
+</html>

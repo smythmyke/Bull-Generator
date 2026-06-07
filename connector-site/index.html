@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Patent Search Generator — Claude Connector</title>
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link rel="icon" type="image/png" sizes="128x128" href="/logo.png">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 { color: #2c5282; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; }
+        h2 { color: #2d3748; margin-top: 30px; }
+        h3 { color: #2d3748; margin-top: 20px; }
+        .logo-row { display: flex; align-items: center; gap: 14px; }
+        .logo-row img { width: 48px; height: 48px; }
+        code { background: #edf2f7; padding: 2px 6px; border-radius: 4px; font-size: 0.95em; }
+        pre { background: #edf2f7; padding: 12px; border-radius: 6px; overflow-x: auto; }
+        table { border-collapse: collapse; width: 100%; margin: 16px 0; }
+        th, td { border: 1px solid #e2e8f0; padding: 8px 10px; text-align: left; vertical-align: top; }
+        th { background: #f7fafc; }
+        .footer { margin-top: 50px; padding-top: 20px; border-top: 1px solid #e2e8f0; color: #718096; }
+        .note { background: #fffaf0; border-left: 4px solid #ed8936; padding: 10px 14px; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <div class="logo-row">
+        <img src="/logo.png" alt="AI Patent Search Generator logo">
+        <h1>AI Patent Search Generator — Claude Connector</h1>
+    </div>
+
+    <p>
+        Raw USPTO patent intelligence inside Claude: dossiers, claims, prosecution
+        (file-wrapper) history, PTAB validity challenges, district-court litigation,
+        examiner statistics, ownership chain of title, and legal status — fetched live
+        from USPTO Open Data and rendered for chat.
+    </p>
+
+    <h2>Setup</h2>
+    <ol>
+        <li>In Claude, open <strong>Settings → Connectors</strong> (or find <em>AI Patent Search Generator</em> in the Connector Directory) and add the connector. Custom-URL setup: <code>https://patent-search-generator.web.app/api/mcp</code>.</li>
+        <li>When prompted, sign in with your email. A one-time code is sent to your inbox — no password needed. New accounts are created automatically and include free starter credits.</li>
+        <li>In a conversation, enable the connector from the tools menu (next to the message box), then ask a patent question — Claude calls the tools automatically.</li>
+    </ol>
+
+    <h2>Tools</h2>
+    <table>
+        <tr><th>Tool</th><th>What it returns</th><th>Cost</th></tr>
+        <tr><td><code>dossier</code></td><td>Full patent dossier: bibliography, independent claims, citations, family, CPC classes, similar documents</td><td>3 credits (fresh fetch); free from 24h cache</td></tr>
+        <tr><td><code>claims</code></td><td>All claims with full text (independent + dependent)</td><td>1 credit (cold); free from cache</td></tr>
+        <tr><td><code>prosecution</code></td><td>USPTO file-wrapper documents: office actions, responses, amendments, notices</td><td>Free</td></tr>
+        <tr><td><code>challenges</code></td><td>PTAB validity challenges (IPR/PGR/CBM): petitioner, dates, outcome</td><td>Free</td></tr>
+        <tr><td><code>litigation</code></td><td>District-court infringement suits (USPTO litigation dataset, 2003–2020 coverage)</td><td>Free</td></tr>
+        <tr><td><code>examiner</code></td><td>Assigned examiner's art unit, allowance rate, average pendency</td><td>Free</td></tr>
+        <tr><td><code>assignments</code></td><td>Recorded chain of title: conveyances, reel/frame, current assignee</td><td>Free</td></tr>
+        <tr><td><code>legal_status</code></td><td>In force vs lapsed/expired, anticipated expiration, maintenance-fee history</td><td>Free</td></tr>
+        <tr><td><code>balance</code></td><td>Your credit balance and subscription status</td><td>Free</td></tr>
+    </table>
+
+    <h3>Example prompts</h3>
+    <ul>
+        <li>“Pull the dossier for US10867416B2 and summarize what it covers.”</li>
+        <li>“Has US8724622B2 been challenged at the PTAB? Did it survive?”</li>
+        <li>“Who owns US10867416B2 and is it still in force?”</li>
+        <li>“What happened during prosecution of US10867416B2? Any rejections?”</li>
+        <li>“What's the allowance rate of the examiner who handled US10867416B2?”</li>
+    </ul>
+
+    <h2>Coverage notes</h2>
+    <ul>
+        <li><strong>US patents only.</strong> Data comes from the USPTO Open Data Portal; file-wrapper coverage starts with applications filed in 2001.</li>
+        <li>Litigation data covers 2003–2016 comprehensively and partially to 2020 (the USPTO Patent Litigation Dataset's range). An empty result means no suit on record in that window.</li>
+        <li>All tools are read-only lookups of public USPTO records.</li>
+    </ul>
+
+    <h2>Troubleshooting</h2>
+    <ul>
+        <li><strong>“Authentication required” / tools missing:</strong> make sure the connector is toggled ON for the current conversation (tools menu near the message box), and that you completed the email sign-in when adding it.</li>
+        <li><strong>“Not enough credits”:</strong> only <code>dossier</code> and <code>claims</code> ever charge credits, and only on fresh fetches. Check <code>balance</code>; credits can be added from your account.</li>
+        <li><strong>“No US patent … found in USPTO ODP”:</strong> the patent may pre-date ODP coverage (applications filed before 2001) or the number may be malformed — use the canonical form, e.g. <code>US10867416B2</code>.</li>
+        <li><strong>Disconnect / reconnect:</strong> Settings → Connectors → AI Patent Search Generator → Disconnect, then add again and re-run the email sign-in.</li>
+    </ul>
+
+    <div class="note">
+        <strong>Not legal advice.</strong> This connector reports public USPTO records and
+        machine-generated summaries for research purposes. It does not provide legal advice;
+        consult a registered patent attorney for legal opinions.
+    </div>
+
+    <h2>More</h2>
+    <ul>
+        <li><a href="/privacy.html">Privacy policy</a> · <a href="/terms.html">Terms of service</a></li>
+        <li><a href="https://smythmyke.github.io/Bull-Generator/">Product site</a> (Chrome extension, API, Slack app)</li>
+        <li>Developers: REST API + stdio MCP server — see <a href="https://smythmyke.github.io/Bull-Generator/developers.html">developer docs</a> and <a href="https://www.npmjs.com/package/patent-search-mcp-server">patent-search-mcp-server</a> on npm.</li>
+    </ul>
+
+    <div class="footer">
+        <p>Support: <a href="mailto:smythmyke@gmail.com">smythmyke@gmail.com</a></p>
+        <p>AI Patent Search Generator</p>
+    </div>
+</body>
+</html>

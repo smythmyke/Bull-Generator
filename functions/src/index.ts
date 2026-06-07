@@ -1054,3 +1054,8 @@ function escapeHtml(s: string): string {
     c === "\"" ? "&quot;" : "&#39;"
   );
 }
+
+// Remote MCP server (Claude Connector Directory) — stateless Streamable HTTP
+// JSON-RPC + WorkOS AuthKit OAuth. Served at patent-search-generator.web.app
+// via the hosting:psg rewrites (/api/mcp + the RFC 9728 well-known paths).
+export {mcp} from "./mcp";

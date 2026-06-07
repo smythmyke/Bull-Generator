@@ -47,3 +47,4 @@ mcp-server/
 
 # Litigation dataset scratch (USPTO PTLITIG CSVs — re-downloadable)
 .litig-scratch/
+functions/.env.local
